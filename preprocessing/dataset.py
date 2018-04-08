@@ -90,7 +90,7 @@ def slim_get_split(dataset_dir, image_preprocessing_fn, batch_size, num_readers,
                                 #classid, key_x, key_y, key_v, key_id, key_gid],
                                 dynamic_pad=False,#(not is_training),
                                 batch_size = batch_size,
-                                allow_smaller_final_batch=False,
+                                allow_smaller_final_batch=True,
                                 num_threads = num_preprocessing_threads,
                                 capacity = 64 * batch_size)
     return batch_input

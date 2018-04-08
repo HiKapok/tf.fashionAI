@@ -55,7 +55,7 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format, ker
 
   return tf.layers.conv2d(
             inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
-            padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
+            padding=('same' if strides == 1 else 'valid'), use_bias=False,
             kernel_initializer=kernel_initializer(),
             data_format=data_format, name=name)
 
@@ -100,7 +100,7 @@ def hourglass(inputs, filters, is_training, data_format, deep_index=1, num_modul
   # for m in range(num_modules):
   #   upchannal1 = bottleneck_block(upchannal1, filters, filters, is_training, data_format, name=None if name is None else name+'_up_{}'.format(m))
 
-  downchannal1 = tf.layers.max_pooling2d(inputs=inputs, pool_size=2, strides=2, padding='SAME',
+  downchannal1 = tf.layers.max_pooling2d(inputs=inputs, pool_size=2, strides=2, padding='valid',
           data_format=data_format, name=None if name is None else name+'_down_pool')
 
   downchannal1 = dozen_bottleneck_blocks(downchannal1, filters, filters, num_modules, is_training, data_format, name=None if name is None else name+'_down1_{}')
@@ -136,7 +136,7 @@ def create_model(inputs, num_stack, feat_channals, output_channals, num_modules,
   inputs = batch_norm_relu(inputs, is_training, data_format, name='precede_bn')
 
   inputs = bottleneck_block(inputs, 64, 128, is_training, data_format, name='precede/residual1')
-  inputs = tf.layers.max_pooling2d(inputs=inputs, pool_size=2, strides=2, padding='SAME',
+  inputs = tf.layers.max_pooling2d(inputs=inputs, pool_size=2, strides=2, padding='valid',
               data_format=data_format, name='precede_pool')
 
   inputs = bottleneck_block(inputs, 128, 128, is_training, data_format, name='precede/residual2')
@@ -159,7 +159,7 @@ def create_model(inputs, num_stack, feat_channals, output_channals, num_modules,
     # use variable_scope to help model resotre name filter
     with tf.variable_scope('hg_heatmap', default_name=None, values=[output_scores], reuse=tf.AUTO_REUSE):
       heatmap = tf.layers.conv2d(inputs=output_scores, filters=output_channals, kernel_size=1,
-                                strides=1, padding='SAME', use_bias=True, activation=None,
+                                strides=1, padding='same', use_bias=True, activation=None,
                                 kernel_initializer=initializer_to_use(),
                                 bias_initializer=tf.zeros_initializer(),
                                 data_format=data_format,
@@ -170,7 +170,7 @@ def create_model(inputs, num_stack, feat_channals, output_channals, num_modules,
     # no remap conv for the last hourglass
     if stack_index < num_stack - 1:
       output_scores_ = tf.layers.conv2d(inputs=output_scores, filters=feat_channals, kernel_size=1,
-                          strides=1, padding='SAME', use_bias=True, activation=None,
+                          strides=1, padding='same', use_bias=True, activation=None,
                           kernel_initializer=initializer_to_use(),
                           bias_initializer=tf.zeros_initializer(),
                           data_format=data_format,
@@ -178,7 +178,7 @@ def create_model(inputs, num_stack, feat_channals, output_channals, num_modules,
       # use variable_scope to help model resotre name filter
       with tf.variable_scope('hg_heatmap', default_name=None, values=[heatmap], reuse=tf.AUTO_REUSE):
         heatmap_ = tf.layers.conv2d(inputs=heatmap, filters=feat_channals, kernel_size=1,
-                        strides=1, padding='SAME', use_bias=True, activation=None,
+                        strides=1, padding='same', use_bias=True, activation=None,
                         kernel_initializer=initializer_to_use(),
                         bias_initializer=tf.zeros_initializer(),
                         data_format=data_format,

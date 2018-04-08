@@ -18,7 +18,7 @@ from __future__ import print_function
 
 import os
 import sys
-
+import numpy as np
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
@@ -101,10 +101,16 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     'momentum', 0.9,
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
-tf.app.flags.DEFINE_float('learning_rate', 2.5e-4, 'Initial learning rate.')
+tf.app.flags.DEFINE_float('learning_rate', 2.5e-4, 'Initial learning rate.')#2.5e-4
 tf.app.flags.DEFINE_float(
-    'end_learning_rate', 0.00001,
+    'end_learning_rate', 0.000001,
     'The minimal end learning rate used by a polynomial decay learning rate.')
+tf.app.flags.DEFINE_float(
+    'warmup_learning_rate', 0.00001,
+    'The start warm-up learning rate to avoid NAN.')
+tf.app.flags.DEFINE_integer(
+    'warmup_steps', 100,
+    'The total steps to warm-up.')
 # for learning rate piecewise_constant decay
 tf.app.flags.DEFINE_string(
     'decay_boundaries', '2, 3',
@@ -147,11 +153,85 @@ def input_pipeline(is_training=True, num_epochs=FLAGS.epochs_per_eval):
         rnorm_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(config.local_norm_key, dtype=tf.int64),
                                                                 tf.constant(config.local_norm_rvalues, dtype=tf.int64)), 1)
 
-    preprocessing_fn = lambda org_image, classid, shape, key_x, key_y, key_v: preprocessing.preprocess_image(org_image, classid, shape, FLAGS.train_image_size, FLAGS.train_image_size, key_x, key_y, key_v, (lnorm_table, rnorm_table), is_training=is_training, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), category=(FLAGS.model_scope if 'all' not in FLAGS.model_scope else '*'))
+    preprocessing_fn = lambda org_image, classid, shape, key_x, key_y, key_v: preprocessing.preprocess_image(org_image, classid, shape, FLAGS.train_image_size, FLAGS.train_image_size, key_x, key_y, key_v, (lnorm_table, rnorm_table), is_training=is_training, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), category=(FLAGS.model_scope if 'all' not in FLAGS.model_scope else '*'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
 
-    images, shape, classid, targets, key_v, isvalid, norm_value = dataset.slim_get_split(FLAGS.data_dir, preprocessing_fn, FLAGS.batch_size, FLAGS.num_readers, FLAGS.num_preprocessing_threads, num_epochs=num_epochs, is_training=is_training, file_pattern='{}_????', category=(FLAGS.model_scope if 'all' not in FLAGS.model_scope else '*'), reader=None)
+    images, shape, classid, targets, key_v, isvalid, norm_value = dataset.slim_get_split(FLAGS.data_dir, preprocessing_fn, FLAGS.batch_size, FLAGS.num_readers, FLAGS.num_preprocessing_threads, num_epochs=num_epochs, is_training=is_training, file_pattern=FLAGS.dataset_name, category=(FLAGS.model_scope if 'all' not in FLAGS.model_scope else '*'), reader=None)
 
     return images, {'targets': targets, 'key_v': key_v, 'shape': shape, 'classid': classid, 'isvalid': isvalid, 'norm_value': norm_value}
+
+if config.PRED_DEBUG:
+  from scipy.misc import imread, imsave, imshow, imresize
+  def save_image_with_heatmap(image, height, width, heatmap_size, targets, pred_heatmap, indR, indG, indB):
+      if not hasattr(save_image_with_heatmap, "counter"):
+          save_image_with_heatmap.counter = 0  # it doesn't exist yet, so initialize it
+      save_image_with_heatmap.counter += 1
+
+      img_to_save = np.array(image.tolist()) + 128
+      #print(img_to_save)
+
+      img_to_save = img_to_save.astype(np.uint8)
+
+      heatmap0 = np.sum(targets[indR, ...], axis=0).astype(np.uint8)
+      heatmap1 = np.sum(targets[indG, ...], axis=0).astype(np.uint8)
+      heatmap2 = np.sum(targets[indB, ...], axis=0).astype(np.uint8) if len(indB) > 0 else np.zeros((heatmap_size, heatmap_size), dtype=np.float32)
+
+      img_to_save = imresize(img_to_save, (height, width), interp='lanczos')
+      heatmap0 = imresize(heatmap0, (height, width), interp='lanczos')
+      heatmap1 = imresize(heatmap1, (height, width), interp='lanczos')
+      heatmap2 = imresize(heatmap2, (height, width), interp='lanczos')
+
+      img_to_save = img_to_save/2
+      img_to_save[:,:,0] = np.clip((img_to_save[:,:,0] + heatmap0 + heatmap2), 0, 255)
+      img_to_save[:,:,1] = np.clip((img_to_save[:,:,1] + heatmap1 + heatmap2), 0, 255)
+      #img_to_save[:,:,2] = np.clip((img_to_save[:,:,2]/4. + heatmap2), 0, 255)
+      file_name = 'targets_{}.jpg'.format(save_image_with_heatmap.counter)
+      imsave(os.path.join(config.DEBUG_DIR, file_name), img_to_save.astype(np.uint8))
+
+      pred_heatmap = np.array(pred_heatmap.tolist())
+      #print(pred_heatmap.shape)
+      for ind in range(pred_heatmap.shape[0]):
+        img = pred_heatmap[ind]
+        img = img - img.min()
+        img *= 255.0/img.max()
+        file_name = 'heatmap_{}_{}.jpg'.format(save_image_with_heatmap.counter, ind)
+        imsave(os.path.join(config.DEBUG_DIR, file_name), img.astype(np.uint8))
+      return save_image_with_heatmap.counter
+
+def get_keypoint(image, targets, predictions, heatmap_size, height, width, category, clip_at_zero=True, data_format='channels_last', name=None):
+    predictions = tf.reshape(predictions, [1, -1, heatmap_size*heatmap_size])
+
+    pred_max = tf.reduce_max(predictions, axis=-1)
+    pred_indices = tf.argmax(predictions, axis=-1)
+    pred_x, pred_y = tf.cast(tf.floormod(pred_indices, heatmap_size), tf.float32), tf.cast(tf.floordiv(pred_indices, heatmap_size), tf.float32)
+
+    width, height = tf.cast(width, tf.float32), tf.cast(height, tf.float32)
+    pred_x, pred_y = pred_x * width / tf.cast(heatmap_size, tf.float32), pred_y * height / tf.cast(heatmap_size, tf.float32)
+
+    if clip_at_zero:
+      pred_x, pred_y =  pred_x * tf.cast(pred_max>0, tf.float32), pred_y * tf.cast(pred_max>0, tf.float32)
+      pred_x = pred_x * tf.cast(pred_max>0, tf.float32) + tf.cast(pred_max<=0, tf.float32) * (width / 2.)
+      pred_y = pred_y * tf.cast(pred_max>0, tf.float32) + tf.cast(pred_max<=0, tf.float32) * (height / 2.)
+
+    if config.PRED_DEBUG:
+      pred_indices_ = tf.squeeze(pred_indices)
+      image_ = tf.squeeze(image) * 255.
+      pred_heatmap = tf.one_hot(pred_indices_, heatmap_size*heatmap_size, on_value=255, off_value=0, axis=-1, dtype=tf.int32)
+
+      pred_heatmap = tf.reshape(pred_heatmap, [-1, heatmap_size, heatmap_size])
+      if data_format == 'channels_first':
+        image_ = tf.transpose(image_, perm=(1, 2, 0))
+      save_image_op = tf.py_func(save_image_with_heatmap,
+                                  [image_, height, width,
+                                  heatmap_size,
+                                  tf.reshape(targets * 255., [-1, heatmap_size, heatmap_size]),
+                                  tf.reshape(predictions, [-1, heatmap_size, heatmap_size]),
+                                  config.left_right_group_map[category][0],
+                                  config.left_right_group_map[category][1],
+                                  config.left_right_group_map[category][2]],
+                                  tf.int64, stateful=True)
+      with tf.control_dependencies([save_image_op]):
+        pred_x, pred_y = pred_x * 1., pred_y * 1.
+    return pred_x, pred_y
 
 def keypoint_model_fn(features, labels, mode, params):
     targets = labels['targets']
@@ -160,6 +240,8 @@ def keypoint_model_fn(features, labels, mode, params):
     key_v = labels['key_v']
     isvalid = labels['isvalid']
     norm_value = labels['norm_value']
+
+    cur_batch_size = tf.shape(features)[0]
 
     with tf.variable_scope(params['model_scope'], default_name=None, values=[features], reuse=tf.AUTO_REUSE):
         pred_outputs = hg.create_model(features, params['num_stacks'], params['feats_channals'],
@@ -171,28 +253,42 @@ def keypoint_model_fn(features, labels, mode, params):
 
     score_map = pred_outputs[-1]
 
-    ne_mertric = mertric.normalized_error(targets, score_map, norm_value, key_v, isvalid,
-                             params['batch_size'],
+    pred_x, pred_y = get_keypoint(features, targets, score_map, params['heatmap_size'], params['train_image_size'], params['train_image_size'], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+    with tf.control_dependencies([pred_x, pred_y]):
+        ne_mertric = mertric.normalized_error(targets, score_map, norm_value, key_v, isvalid,
+                             cur_batch_size,
                              config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')],
                              params['heatmap_size'],
                              params['train_image_size'])
 
-    last_pred_mse = tf.metrics.mean_squared_error(score_map, targets,
-                                weights=1.0 / params['batch_size'],
-                                name='last_pred_mse')
-    metrics = {'normalized_error': ne_mertric}
+    # last_pred_mse = tf.metrics.mean_squared_error(score_map, targets,
+    #                             weights=1.0 / cur_batch_size,
+    #                             name='last_pred_mse')
+
+    sq_diff = tf.reduce_sum(tf.squared_difference(targets, score_map), axis=-1)
+    last_pred_mse = tf.metrics.mean_absolute_error(sq_diff, tf.zeros_like(sq_diff), name='last_pred_mse')
+
+    metrics = {'normalized_error': ne_mertric, 'last_pred_mse':last_pred_mse}
     predictions = {'normalized_error': ne_mertric[1]}
     ne_mertric = tf.identity(ne_mertric[1], name='ne_mertric')
     #print(ne_mertric)
 
-    mse_loss_list = []
-    for pred in pred_outputs:
-        mse_loss_list.append(tf.losses.mean_squared_error(targets, pred,
-                            weights=1.0 / params['batch_size'],
-                            loss_collection=None,#tf.GraphKeys.LOSSES,
-                            reduction=tf.losses.Reduction.SUM_OVER_BATCH_SIZE))
+    # mse_loss_list = []
+    # for pred in pred_outputs:
+    #     mse_loss_list.append(tf.losses.mean_squared_error(targets, pred,
+    #                         weights=1.0 / cur_batch_size,
+    #                         loss_collection=None,#tf.GraphKeys.LOSSES,
+    #                         reduction=tf.losses.Reduction.SUM))# SUM_OVER_BATCH_SIZE, default mean by all elements
 
-    mse_loss = tf.multiply(params['mse_weight'], tf.add_n(mse_loss_list), name='mse_loss')
+    # mse_loss = tf.multiply(params['mse_weight'], tf.add_n(mse_loss_list), name='mse_loss')
+    # tf.summary.scalar('mse', mse_loss)
+    # tf.losses.add_loss(mse_loss)
+
+    bce_loss_list = []
+    for pred in pred_outputs:
+        bce_loss_list.append(tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=pred, labels=targets)))
+
+    mse_loss = tf.multiply(params['mse_weight'] / params['num_stacks'], tf.add_n(bce_loss_list), name='mse_loss')
     tf.summary.scalar('mse', mse_loss)
     tf.losses.add_loss(mse_loss)
 
@@ -210,9 +306,9 @@ def keypoint_model_fn(features, labels, mode, params):
     if mode == tf.estimator.ModeKeys.TRAIN:
         global_step = tf.train.get_or_create_global_step()
 
-        lr_values = [params['learning_rate'] * decay for decay in params['lr_decay_factors']]
+        lr_values = [params['warmup_learning_rate']] + [params['learning_rate'] * decay for decay in params['lr_decay_factors']]
         learning_rate = tf.train.piecewise_constant(tf.cast(global_step, tf.int32),
-                                                    [int(float(ep)*params['steps_per_epoch']) for ep in params['decay_boundaries']],
+                                                    [params['warmup_steps']] + [int(float(ep)*params['steps_per_epoch']) for ep in params['decay_boundaries']],
                                                     lr_values)
         truncated_learning_rate = tf.maximum(learning_rate, tf.constant(params['end_learning_rate'], dtype=learning_rate.dtype), name='learning_rate')
         tf.summary.scalar('lr', truncated_learning_rate)
@@ -272,6 +368,8 @@ def main(_):
             'momentum': FLAGS.momentum,
             'learning_rate': FLAGS.learning_rate,
             'end_learning_rate': FLAGS.end_learning_rate,
+            'warmup_learning_rate': FLAGS.warmup_learning_rate,
+            'warmup_steps': FLAGS.warmup_steps,
             'decay_boundaries': parse_comma_list(FLAGS.decay_boundaries),
             'lr_decay_factors': parse_comma_list(FLAGS.lr_decay_factors),
         })
@@ -284,7 +382,7 @@ def main(_):
             'ne': 'ne_mertric',
         }
 
-        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: ', '.join(['%s=%.6f' % (k, v) for k, v in dicts.items()]))
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: ', '.join(['%s=%.7f' % (k, v) for k, v in dicts.items()]))
 
         tf.logging.info('Starting a training cycle.')
         fashionAI.train(input_fn=lambda : input_pipeline(True), hooks=[logging_hook])

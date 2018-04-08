@@ -1,6 +1,7 @@
 import os
 
 DEBUG = False
+PRED_DEBUG = False
 
 DATA_DIR = '/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets'
 RECORDS_DATA_DIR = '/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords'
@@ -10,6 +11,7 @@ CATEGORIES = ['blouse', 'dress', 'outwear', 'skirt', 'trousers']
 SPLITS = ['test', 'train_0', 'train_1']
 
 DEBUG_DIR = '/media/rs/0E06CD1706CD0127/Kapok/Chi/Debug'
+EVAL_DEBUG_DIR = '/media/rs/0E06CD1706CD0127/Kapok/Chi/Eval_Debug'
 
 
 #all_keys = sorted(list(set(blouse_key + outwear_key + trousers_key + skirt_key + dress_key)))
@@ -219,7 +221,7 @@ dress_global_ind = []
 for i in range(len(inverse_dress_keymap)):
     dress_global_ind.append(key2ind[inverse_dress_keymap[i]]-1)
 
-
+# whick global ind is this position belongs to
 class2global_ind_map = {
     '*': list(range(24)),
     'blouse': blouse_global_ind,

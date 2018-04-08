@@ -78,10 +78,16 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     'momentum', 0.9,
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
-tf.app.flags.DEFINE_float('learning_rate', 2.5e-4, 'Initial learning rate.')
+tf.app.flags.DEFINE_float('learning_rate', 2.5e-4, 'Initial learning rate.')#2.5e-4
 tf.app.flags.DEFINE_float(
-    'end_learning_rate', 0.00001,
+    'end_learning_rate', 0.000001,
     'The minimal end learning rate used by a polynomial decay learning rate.')
+tf.app.flags.DEFINE_float(
+    'warmup_learning_rate', 0.00001,
+    'The start warm-up learning rate to avoid NAN.')
+tf.app.flags.DEFINE_integer(
+    'warmup_steps', 100,
+    'The total steps to warm-up.')
 # for learning rate piecewise_constant decay
 tf.app.flags.DEFINE_string(
     'decay_boundaries', '2, 3',
@@ -106,6 +112,12 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
     'Wether we will train on cloud.')
+tf.app.flags.DEFINE_boolean(
+    'seq_train', True,
+    'Wether we will train a sequence model.')
+tf.app.flags.DEFINE_string(
+    'model_to_train', 'all, blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
+    'The sub-model to train (comma-separated list).')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -132,6 +144,8 @@ total_params = {
     '-momentum': FLAGS.momentum,
     '-learning_rate': FLAGS.learning_rate,
     '-end_learning_rate': FLAGS.end_learning_rate,
+    '-warmup_learning_rate': FLAGS.warmup_learning_rate,
+    '-warmup_steps': FLAGS.warmup_steps,
     '-decay_boundaries': FLAGS.decay_boundaries,
     '-lr_decay_factors': FLAGS.lr_decay_factors,
     '-checkpoint_path': FLAGS.checkpoint_path,
@@ -141,74 +155,117 @@ total_params = {
     '-run_on_cloud': FLAGS.run_on_cloud
     }
 
-detail_params = {
-    'all': {
-        'model_dir' : os.path.join(FLAGS.model_dir, 'all'),
-        'train_epochs': 5,
-        'epochs_per_eval': 1,
-        'decay_boundaries': '2, 3',
-        'model_scope': 'all',
-    },
-    'blouse': {
-        'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
-        'train_epochs': 40,
-        'epochs_per_eval': 5,
-        'decay_boundaries': '10, 25',
-        'model_scope': 'blouse',
-        'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
-        'checkpoint_model_scope': 'all',
-        'checkpoint_exclude_scopes': 'all/hg_heatmap',
-    },
-    'dress': {
-        'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
-        'train_epochs': 40,
-        'epochs_per_eval': 5,
-        'decay_boundaries': '10, 25',
-        'model_scope': 'dress',
-        'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
-        'checkpoint_model_scope': 'all',
-        'checkpoint_exclude_scopes': 'all/hg_heatmap',
-    },
-    'outwear': {
-        'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
-        'train_epochs': 40,
-        'epochs_per_eval': 5,
-        'decay_boundaries': '10, 25',
-        'model_scope': 'outwear',
-        'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
-        'checkpoint_model_scope': 'all',
-        'checkpoint_exclude_scopes': 'all/hg_heatmap',
-    },
-    'skirt': {
-        'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
-        'train_epochs': 40,
-        'epochs_per_eval': 5,
-        'decay_boundaries': '10, 25',
-        'model_scope': 'skirt',
-        'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
-        'checkpoint_model_scope': 'all',
-        'checkpoint_exclude_scopes': 'all/hg_heatmap',
-    },
-    'trousers': {
-        'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
-        'train_epochs': 40,
-        'epochs_per_eval': 5,
-        'decay_boundaries': '10, 25',
-        'model_scope': 'trousers',
-        'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
-        'checkpoint_model_scope': 'all',
-        'checkpoint_exclude_scopes': 'all/hg_heatmap',
-    },
-}
+if FLAGS.seq_train:
+    detail_params = {
+        'all': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'all'),
+            'train_epochs': 6,
+            'epochs_per_eval': 3,
+            'decay_boundaries': '3, 4',
+            'model_scope': 'all',
+        },
+        'blouse': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
+            'train_epochs': 50,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '15, 30',
+            'model_scope': 'blouse',
+            'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+            'checkpoint_model_scope': 'all',
+            'checkpoint_exclude_scopes': 'blouse/hg_heatmap',
+        },
+        'dress': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
+            'train_epochs': 50,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '15, 30',
+            'model_scope': 'dress',
+            'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+            'checkpoint_model_scope': 'all',
+            'checkpoint_exclude_scopes': 'dress/hg_heatmap',
+        },
+        'outwear': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
+            'train_epochs': 50,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '15, 30',
+            'model_scope': 'outwear',
+            'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+            'checkpoint_model_scope': 'all',
+            'checkpoint_exclude_scopes': 'outwear/hg_heatmap',
+        },
+        'skirt': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
+            'train_epochs': 50,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '15, 30',
+            'model_scope': 'skirt',
+            'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+            'checkpoint_model_scope': 'all',
+            'checkpoint_exclude_scopes': 'skirt/hg_heatmap',
+        },
+        'trousers': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
+            'train_epochs': 50,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '15, 30',
+            'model_scope': 'trousers',
+            'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+            'checkpoint_model_scope': 'all',
+            'checkpoint_exclude_scopes': 'trousers/hg_heatmap',
+        },
+    }
+else:
+    detail_params = {
+        'blouse': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
+            'train_epochs': 60,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '20, 40',
+            'model_scope': 'blouse',
+        },
+        'dress': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
+            'train_epochs': 60,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '20, 40',
+            'model_scope': 'dress',
+        },
+        'outwear': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
+            'train_epochs': 60,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '20, 40',
+            'model_scope': 'outwear',
+        },
+        'skirt': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
+            'train_epochs': 60,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '20, 40',
+            'model_scope': 'skirt',
+        },
+        'trousers': {
+            'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
+            'train_epochs': 60,
+            'epochs_per_eval': 20,
+            'decay_boundaries': '20, 40',
+            'model_scope': 'trousers',
+        },
+    }
 
 def parse_comma_list(args):
     return [float(s.strip()) for s in args.split(',')]
+def parse_str_comma_list(args):
+    return [s.strip() for s in args.split(',')]
 
 def main(_):
     import subprocess
     import copy
 
-    all_category = ['all'] + config.CATEGORIES
+    #['skirt', 'dress', 'outwear', 'trousers']#
+    all_category = parse_str_comma_list(FLAGS.model_to_train)
+
     for cat in all_category:
         tf.gfile.MakeDirs(os.path.join(FLAGS.model_dir, cat))
 

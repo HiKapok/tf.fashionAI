@@ -502,7 +502,7 @@ def np_draw_labelmap(pt, heatmap_sigma, heatmap_size, type='Gaussian'):
     return (img, 1)
 
 def draw_labelmap(x, y, heatmap_sigma, heatmap_size):
-  heatmap, isvalid = tf.map_fn(lambda pt : tf.py_func(np_draw_labelmap, [pt, heatmap_sigma, heatmap_size], [tf.float32, tf.int64], stateful=False),
+  heatmap, isvalid = tf.map_fn(lambda pt : tf.py_func(np_draw_labelmap, [pt, heatmap_sigma, heatmap_size], [tf.float32, tf.int64], stateful=True),
                     tf.stack([x, y], axis=-1),
                     dtype=[tf.float32, tf.int64], parallel_iterations=10,
                     back_prop=False, swap_memory=False, infer_shape=True)
@@ -783,7 +783,7 @@ def preprocess_for_train(image,
     scale_y_ = tf.cast(output_height, tf.float32)/tf.cast(shape[0], tf.float32)
     scale_x = tf.cast(output_width, tf.float32)/tf.cast(heatmap_size, tf.float32)
     scale_y = tf.cast(output_height, tf.float32)/tf.cast(heatmap_size, tf.float32)
-    # if the two point used for calculate norm factor, then we use original point
+    # if the two point used for calculate norm factor missing, then we use original point
     norm_x, norm_y = tf.cond(tf.reduce_sum(tf.gather(isvalid, norm_gather_ind)) < 2,
                         lambda: (tf.cast(tf.gather(key_x, norm_gather_ind), tf.float32) * scale_x_,
                                 tf.cast(tf.gather(key_y, norm_gather_ind), tf.float32) * scale_y_),
@@ -810,7 +810,7 @@ def preprocess_for_train(image,
       normarlized_image = _mean_image_subtraction(distorted_image, [_R_MEAN, _G_MEAN, _B_MEAN])
     if data_format == 'NCHW':
       normarlized_image = tf.transpose(normarlized_image, perm=(2, 0, 1))
-    return normarlized_image, targets, new_key_v, isvalid, norm_value
+    return normarlized_image/255., targets, new_key_v, isvalid, norm_value
 
 
 def preprocess_for_eval(image, classid, shape, output_height, output_width, key_x, key_y, key_v, norm_table, data_format, category, bbox_border, heatmap_sigma, heatmap_size, resize_side, scope=None):
@@ -865,7 +865,7 @@ def preprocess_for_eval(image, classid, shape, output_height, output_width, key_
 
     if data_format == 'NCHW':
       normarlized_image = tf.transpose(normarlized_image, perm=(2, 0, 1))
-    return normarlized_image, targets, key_v, isvalid, norm_value
+    return normarlized_image/255., targets, key_v, isvalid, norm_value
 
 
 def preprocess_for_test(image, shape, output_height, output_width, data_format='NCHW', bbox_border=25., heatmap_sigma=1., heatmap_size=64, scope=None):
@@ -892,7 +892,7 @@ def preprocess_for_test(image, shape, output_height, output_width, data_format='
     normarlized_image = _mean_image_subtraction(image, [_R_MEAN, _G_MEAN, _B_MEAN])
     if data_format == 'NCHW':
       normarlized_image = tf.transpose(normarlized_image, perm=(2, 0, 1))
-    return normarlized_image
+    return normarlized_image/255.
 
 def preprocess_image(image, classid, shape, output_height, output_width,
                     key_x, key_y, key_v, norm_table,
