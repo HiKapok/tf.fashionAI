@@ -4,7 +4,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-_BATCH_NORM_DECAY = 0.997
+_BATCH_NORM_DECAY = 0.9
 _BATCH_NORM_EPSILON = 1e-5
 _USE_FUSED_BN = True
 #initializer_to_use = tf.glorot_uniform_initializer

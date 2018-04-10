@@ -166,7 +166,7 @@ if config.PRED_DEBUG:
           save_image_with_heatmap.counter = 0  # it doesn't exist yet, so initialize it
       save_image_with_heatmap.counter += 1
 
-      img_to_save = np.array(image.tolist()) + 128
+      img_to_save = np.array(image.tolist()) + 120
       #print(img_to_save)
 
       img_to_save = img_to_save.astype(np.uint8)

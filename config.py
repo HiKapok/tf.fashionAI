@@ -231,6 +231,7 @@ class2global_ind_map = {
     'trousers': trousers_global_ind
 }
 
+#print(class2global_ind_map)
 
 left_right_remap = {
     '*': [1, 0, 2, 4, 3, 6, 5, 8, 7, 11, 12, 9, 10, 14, 13, 16, 15, 18, 17, 19, 22, 23, 20, 21],

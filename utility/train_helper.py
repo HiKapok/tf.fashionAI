@@ -155,3 +155,19 @@ def get_init_fn_for_scaffold_(checkpoint_path, model_dir, checkpoint_exclude_sco
     else:
         tf.logging.warning('No Variables to restore')
         return None
+
+def get_latest_checkpoint_for_evaluate_(checkpoint_path, model_dir):
+    flags_checkpoint_path = checkpoint_path
+    # Warn the user if a checkpoint exists in the model_dir. Then ignore.
+    if tf.train.latest_checkpoint(model_dir):
+        tf.logging.info('Ignoring --checkpoint_path because a checkpoint already exists in %s' % model_dir)
+        return None
+
+    if tf.gfile.IsDirectory(flags_checkpoint_path):
+        checkpoint_path = tf.train.latest_checkpoint(flags_checkpoint_path)
+    else:
+        checkpoint_path = flags_checkpoint_path
+
+    tf.logging.info('Restore from %s.' % (checkpoint_path))
+
+    return checkpoint_path
