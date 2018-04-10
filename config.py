@@ -21,7 +21,7 @@ category2ind = dict(zip(sorted(CATEGORIES), list(range(len(CATEGORIES)))))
 ind2category = dict(zip(list(range(len(CATEGORIES))), sorted(CATEGORIES)))
 
 
-#（上衣、外套、连衣裙为两个腋窝点欧式距离,armpit_left|armpit_right，裤子和半身裙为两个裤头点的欧式距离, waistband_left,waistband_right--trousers, skirt）
+#armpit_left|armpit_right; waistband_left,waistband_right--trousers, skirt）
 normalize_point_ind = {
     'blouse': ([5, 6], [6, 7]),
     'outwear': ([4, 5], [6, 7]),

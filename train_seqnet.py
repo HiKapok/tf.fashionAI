@@ -122,37 +122,37 @@ tf.app.flags.DEFINE_string(
 FLAGS = tf.app.flags.FLAGS
 
 total_params = {
-    '-data_dir': FLAGS.data_dir,
-    '-dataset_name': FLAGS.dataset_name,
+    '--data_dir': FLAGS.data_dir,
+    '--dataset_name': FLAGS.dataset_name,
     #'blouse', 'dress', 'outwear', 'skirt', 'trousers', '*'
-    '-model_dir': FLAGS.model_dir,
-    '-save_checkpoints_secs': FLAGS.save_checkpoints_secs,
-    '-train_image_size': FLAGS.train_image_size,
-    '-heatmap_size': FLAGS.heatmap_size,
-    '-heatmap_sigma': FLAGS.heatmap_sigma,
-    '-feats_channals': FLAGS.feats_channals,
-    '-num_stacks': FLAGS.num_stacks,
-    '-num_modules': FLAGS.num_modules,
-    '-bbox_border': FLAGS.bbox_border,
-    '-train_epochs': FLAGS.train_epochs,
-    '-epochs_per_eval': FLAGS.epochs_per_eval,
-    '-batch_size': FLAGS.batch_size,
-    '-data_format': FLAGS.data_format,
-    '-tf_random_seed': FLAGS.tf_random_seed,
-    '-weight_decay': FLAGS.weight_decay,
-    '-mse_weight': FLAGS.mse_weight,
-    '-momentum': FLAGS.momentum,
-    '-learning_rate': FLAGS.learning_rate,
-    '-end_learning_rate': FLAGS.end_learning_rate,
-    '-warmup_learning_rate': FLAGS.warmup_learning_rate,
-    '-warmup_steps': FLAGS.warmup_steps,
-    '-decay_boundaries': FLAGS.decay_boundaries,
-    '-lr_decay_factors': FLAGS.lr_decay_factors,
-    '-checkpoint_path': FLAGS.checkpoint_path,
-    '-checkpoint_model_scope': FLAGS.checkpoint_model_scope,
-    '-model_scope': FLAGS.model_scope,
-    '-checkpoint_exclude_scopes': FLAGS.checkpoint_exclude_scopes,
-    '-run_on_cloud': FLAGS.run_on_cloud
+    '--model_dir': FLAGS.model_dir,
+    '--save_checkpoints_secs': FLAGS.save_checkpoints_secs,
+    '--train_image_size': FLAGS.train_image_size,
+    '--heatmap_size': FLAGS.heatmap_size,
+    '--heatmap_sigma': FLAGS.heatmap_sigma,
+    '--feats_channals': FLAGS.feats_channals,
+    '--num_stacks': FLAGS.num_stacks,
+    '--num_modules': FLAGS.num_modules,
+    '--bbox_border': FLAGS.bbox_border,
+    '--train_epochs': FLAGS.train_epochs,
+    '--epochs_per_eval': FLAGS.epochs_per_eval,
+    '--batch_size': FLAGS.batch_size,
+    '--data_format': FLAGS.data_format,
+    '--tf_random_seed': FLAGS.tf_random_seed,
+    '--weight_decay': FLAGS.weight_decay,
+    '--mse_weight': FLAGS.mse_weight,
+    '--momentum': FLAGS.momentum,
+    '--learning_rate': FLAGS.learning_rate,
+    '--end_learning_rate': FLAGS.end_learning_rate,
+    '--warmup_learning_rate': FLAGS.warmup_learning_rate,
+    '--warmup_steps': FLAGS.warmup_steps,
+    '--decay_boundaries': FLAGS.decay_boundaries,
+    '--lr_decay_factors': FLAGS.lr_decay_factors,
+    '--checkpoint_path': FLAGS.checkpoint_path,
+    '--checkpoint_model_scope': FLAGS.checkpoint_model_scope,
+    '--model_scope': FLAGS.model_scope,
+    '--checkpoint_exclude_scopes': FLAGS.checkpoint_exclude_scopes,
+    '--run_on_cloud': FLAGS.run_on_cloud
     }
 
 if FLAGS.seq_train:
@@ -272,8 +272,8 @@ def main(_):
     for cat in all_category:
         temp_params = copy.deepcopy(total_params)
         for k, v in total_params.items():
-            if k[1:] in detail_params[cat]:
-                temp_params[k] = detail_params[cat][k[1:]]
+            if k[2:] in detail_params[cat]:
+                temp_params[k] = detail_params[cat][k[2:]]
 
         params_str = []
         for k, v in temp_params.items():

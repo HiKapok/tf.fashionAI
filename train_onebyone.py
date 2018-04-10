@@ -138,11 +138,17 @@ tf.app.flags.DEFINE_boolean(
 tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
     'Wether we will train on cloud.')
+tf.app.flags.DEFINE_boolean(
+    'seq_train', True,
+    'Wether we will train a sequence model.')
+tf.app.flags.DEFINE_string(
+    'model_to_train', 'all, blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
+    'The sub-model to train (comma-separated list).')
 
 FLAGS = tf.app.flags.FLAGS
 #--model_scope=blouse --checkpoint_path=./logs/all --data_format=channels_last --batch_size=1
-def input_pipeline(is_training=True, num_epochs=FLAGS.epochs_per_eval):
-    if 'all' in FLAGS.model_scope:
+def input_pipeline(is_training=True, model_scope=FLAGS.model_scope, num_epochs=FLAGS.epochs_per_eval):
+    if 'all' in model_scope:
         lnorm_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(config.global_norm_key, dtype=tf.int64),
                                                                 tf.constant(config.global_norm_lvalues, dtype=tf.int64)), 0)
         rnorm_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(config.global_norm_key, dtype=tf.int64),
@@ -153,9 +159,9 @@ def input_pipeline(is_training=True, num_epochs=FLAGS.epochs_per_eval):
         rnorm_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(config.local_norm_key, dtype=tf.int64),
                                                                 tf.constant(config.local_norm_rvalues, dtype=tf.int64)), 1)
 
-    preprocessing_fn = lambda org_image, classid, shape, key_x, key_y, key_v: preprocessing.preprocess_image(org_image, classid, shape, FLAGS.train_image_size, FLAGS.train_image_size, key_x, key_y, key_v, (lnorm_table, rnorm_table), is_training=is_training, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), category=(FLAGS.model_scope if 'all' not in FLAGS.model_scope else '*'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
+    preprocessing_fn = lambda org_image, classid, shape, key_x, key_y, key_v: preprocessing.preprocess_image(org_image, classid, shape, FLAGS.train_image_size, FLAGS.train_image_size, key_x, key_y, key_v, (lnorm_table, rnorm_table), is_training=is_training, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), category=(model_scope if 'all' not in model_scope else '*'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
 
-    images, shape, classid, targets, key_v, isvalid, norm_value = dataset.slim_get_split(FLAGS.data_dir, preprocessing_fn, FLAGS.batch_size, FLAGS.num_readers, FLAGS.num_preprocessing_threads, num_epochs=num_epochs, is_training=is_training, file_pattern=FLAGS.dataset_name, category=(FLAGS.model_scope if 'all' not in FLAGS.model_scope else '*'), reader=None)
+    images, shape, classid, targets, key_v, isvalid, norm_value = dataset.slim_get_split(FLAGS.data_dir, preprocessing_fn, FLAGS.batch_size, FLAGS.num_readers, FLAGS.num_preprocessing_threads, num_epochs=num_epochs, is_training=is_training, file_pattern=FLAGS.dataset_name, category=(model_scope if 'all' not in model_scope else '*'), reader=None)
 
     return images, {'targets': targets, 'key_v': key_v, 'shape': shape, 'classid': classid, 'isvalid': isvalid, 'norm_value': norm_value}
 
@@ -330,10 +336,60 @@ def keypoint_model_fn(features, labels, mode, params):
                           loss=loss,
                           train_op=train_op,
                           eval_metric_ops=metrics,
-                          scaffold=tf.train.Scaffold(init_fn=train_helper.get_init_fn_for_scaffold(FLAGS)))
+                          scaffold=tf.train.Scaffold(init_fn=train_helper.get_init_fn_for_scaffold_(params['checkpoint_path'], params['model_dir'], params['checkpoint_exclude_scopes'], params['model_scope'], params['checkpoint_model_scope'], params['ignore_missing_vars'])))
 
 def parse_comma_list(args):
     return [float(s.strip()) for s in args.split(',')]
+
+def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_per_eval, lr_decay_factors, decay_boundaries, checkpoint_path=None, checkpoint_exclude_scopes='', checkpoint_model_scope='', ignore_missing_vars=True):
+    fashionAI = tf.estimator.Estimator(
+        model_fn=model_fn, model_dir=model_dir, config=run_config,
+        params={
+            'checkpoint_path': checkpoint_path,
+            'model_dir': model_dir,
+            'checkpoint_exclude_scopes': checkpoint_exclude_scopes,
+            'model_scope': model_scope,
+            'checkpoint_model_scope': checkpoint_model_scope,
+            'ignore_missing_vars': ignore_missing_vars,
+            'train_image_size': FLAGS.train_image_size,
+            'heatmap_size': FLAGS.heatmap_size,
+            'feats_channals': FLAGS.feats_channals,
+            'num_stacks': FLAGS.num_stacks,
+            'num_modules': FLAGS.num_modules,
+            'data_format': FLAGS.data_format,
+            'model_scope': model_scope,
+            'steps_per_epoch': config.split_size[(model_scope if 'all' not in model_scope else '*')]['train'] // FLAGS.batch_size,
+            'batch_size': FLAGS.batch_size,
+            'weight_decay': FLAGS.weight_decay,
+            'mse_weight': FLAGS.mse_weight,
+            'momentum': FLAGS.momentum,
+            'learning_rate': FLAGS.learning_rate,
+            'end_learning_rate': FLAGS.end_learning_rate,
+            'warmup_learning_rate': FLAGS.warmup_learning_rate,
+            'warmup_steps': FLAGS.warmup_steps,
+            'decay_boundaries': parse_comma_list(decay_boundaries),
+            'lr_decay_factors': parse_comma_list(lr_decay_factors),
+        })
+
+    tf.gfile.MakeDirs(model_dir)
+    tf.logging.info('Starting to train model {}.'.format(model_scope))
+    for _ in range(train_epochs // epochs_per_eval):
+        tensors_to_log = {
+            'lr': 'learning_rate',
+            'loss': 'total_loss',
+            'mse': 'mse_loss',
+            'ne': 'ne_mertric',
+        }
+
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: ', '.join(['%s=%.7f' % (k, v) for k, v in dicts.items()]))
+
+        tf.logging.info('Starting a training cycle.')
+        fashionAI.train(input_fn=lambda : input_pipeline(True), hooks=[logging_hook])
+
+        tf.logging.info('Starting to evaluate.')
+        eval_results = fashionAI.evaluate(input_fn=lambda : input_pipeline(False, 1))
+        tf.logging.info(eval_results)
+    tf.logging.info('Finished model {}.'.format(model_scope))
 
 def main(_):
     # Using the Winograd non-fused algorithms provides a small performance boost.
@@ -352,47 +408,147 @@ def main(_):
                                         log_step_count_steps=FLAGS.log_every_n_steps).replace(
                                         session_config=sess_config)
 
-    fashionAI = tf.estimator.Estimator(
-        model_fn=keypoint_model_fn, model_dir=FLAGS.model_dir, config=run_config,
-        params={
-            'train_image_size': FLAGS.train_image_size,
-            'heatmap_size': FLAGS.heatmap_size,
-            'feats_channals': FLAGS.feats_channals,
-            'num_stacks': FLAGS.num_stacks,
-            'num_modules': FLAGS.num_modules,
-            'data_format': FLAGS.data_format,
-            'model_scope': FLAGS.model_scope,
-            'steps_per_epoch': config.split_size[(FLAGS.model_scope if 'all' not in FLAGS.model_scope else '*')]['train'] // FLAGS.batch_size,
-            'batch_size': FLAGS.batch_size,
-            'weight_decay': FLAGS.weight_decay,
-            'mse_weight': FLAGS.mse_weight,
-            'momentum': FLAGS.momentum,
-            'learning_rate': FLAGS.learning_rate,
-            'end_learning_rate': FLAGS.end_learning_rate,
-            'warmup_learning_rate': FLAGS.warmup_learning_rate,
-            'warmup_steps': FLAGS.warmup_steps,
-            'decay_boundaries': parse_comma_list(FLAGS.decay_boundaries),
-            'lr_decay_factors': parse_comma_list(FLAGS.lr_decay_factors),
-        })
-    if not FLAGS.run_on_cloud:
-        tf.logging.info('params recv: %s', FLAGS.flag_values_dict())
-    tf.gfile.MakeDirs(FLAGS.model_dir)
-    for _ in range(FLAGS.train_epochs // FLAGS.epochs_per_eval):
-        tensors_to_log = {
-            'lr': 'learning_rate',
-            'loss': 'total_loss',
-            'mse': 'mse_loss',
-            'ne': 'ne_mertric',
+    if FLAGS.seq_train:
+        detail_params = {
+            'all': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'all'),
+                'train_epochs': 6,
+                'epochs_per_eval': 3,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '3, 4',
+                'model_scope': 'all',
+                'checkpoint_path': None,
+                'checkpoint_model_scope': '',
+                'checkpoint_exclude_scopes': '',
+                'ignore_missing_vars': True,
+            },
+            'blouse': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
+                'train_epochs': 50,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '15, 30',
+                'model_scope': 'blouse',
+                'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+                'checkpoint_model_scope': 'all',
+                'checkpoint_exclude_scopes': 'blouse/hg_heatmap',
+                'ignore_missing_vars': True,
+            },
+            'dress': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
+                'train_epochs': 50,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '15, 30',
+                'model_scope': 'dress',
+                'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+                'checkpoint_model_scope': 'all',
+                'checkpoint_exclude_scopes': 'dress/hg_heatmap',
+                'ignore_missing_vars': True,
+            },
+            'outwear': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
+                'train_epochs': 50,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '15, 30',
+                'model_scope': 'outwear',
+                'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+                'checkpoint_model_scope': 'all',
+                'checkpoint_exclude_scopes': 'outwear/hg_heatmap',
+                'ignore_missing_vars': True,
+            },
+            'skirt': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
+                'train_epochs': 50,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '15, 30',
+                'model_scope': 'skirt',
+                'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+                'checkpoint_model_scope': 'all',
+                'checkpoint_exclude_scopes': 'skirt/hg_heatmap',
+                'ignore_missing_vars': True,
+            },
+            'trousers': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
+                'train_epochs': 50,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '15, 30',
+                'model_scope': 'trousers',
+                'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
+                'checkpoint_model_scope': 'all',
+                'checkpoint_exclude_scopes': 'trousers/hg_heatmap',
+                'ignore_missing_vars': True,
+            },
         }
-
-        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: ', '.join(['%s=%.7f' % (k, v) for k, v in dicts.items()]))
-
-        tf.logging.info('Starting a training cycle.')
-        fashionAI.train(input_fn=lambda : input_pipeline(True), hooks=[logging_hook])
-
-        tf.logging.info('Starting to evaluate.')
-        eval_results = fashionAI.evaluate(input_fn=lambda : input_pipeline(False, 1))
-        tf.logging.info(eval_results)
+    else:
+        detail_params = {
+            'blouse': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
+                'train_epochs': 60,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '20, 40',
+                'model_scope': 'blouse',
+                'checkpoint_path': None,
+                'checkpoint_model_scope': '',
+                'checkpoint_exclude_scopes': '',
+                'ignore_missing_vars': True,
+            },
+            'dress': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
+                'train_epochs': 60,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '20, 40',
+                'model_scope': 'dress',
+                'checkpoint_path': None,
+                'checkpoint_model_scope': '',
+                'checkpoint_exclude_scopes': '',
+                'ignore_missing_vars': True,
+            },
+            'outwear': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
+                'train_epochs': 60,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '20, 40',
+                'model_scope': 'outwear',
+                'checkpoint_path': None,
+                'checkpoint_model_scope': '',
+                'checkpoint_exclude_scopes': '',
+                'ignore_missing_vars': True,
+            },
+            'skirt': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
+                'train_epochs': 60,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '20, 40',
+                'model_scope': 'skirt',
+                'checkpoint_path': None,
+                'checkpoint_model_scope': '',
+                'checkpoint_exclude_scopes': '',
+                'ignore_missing_vars': True,
+            },
+            'trousers': {
+                'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
+                'train_epochs': 60,
+                'epochs_per_eval': 20,
+                'lr_decay_factors': '1, 0.5, 0.1',
+                'decay_boundaries': '20, 40',
+                'model_scope': 'trousers',
+                'checkpoint_path': None,
+                'checkpoint_model_scope': '',
+                'checkpoint_exclude_scopes': '',
+                'ignore_missing_vars': True,
+            },
+        }
+    model_to_train = [s.strip() for s in FLAGS.model_to_train.split(',')]
+    for m in model_to_train:
+        sub_loop(keypoint_model_fn, m, detail_params[m]['model_dir'], run_config, detail_params[m]['train_epochs'], detail_params[m]['epochs_per_eval'], detail_params[m]['lr_decay_factors'], detail_params[m]['decay_boundaries'], detail_params[m]['checkpoint_path'], detail_params[m]['checkpoint_exclude_scopes'], detail_params[m]['checkpoint_model_scope'], detail_params[m]['ignore_missing_vars'])
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)

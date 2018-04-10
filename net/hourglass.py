@@ -75,7 +75,7 @@ def bottleneck_block(inputs, in_filters, out_filters, is_training, data_format, 
   inputs = conv2d_fixed_padding(
       inputs=inputs, filters=out_filters//2, kernel_size=1, strides=1,
       data_format=data_format, name=None if name is None else name+'_1x1_down')
-  inputs = batch_norm_relu(inputs, is_training, data_format, name=None if name is None else name+'_bn3')
+  inputs = batch_norm_relu(inputs, is_training, data_format, name=None if name is None else name+'_bn2')
 
   inputs = conv2d_fixed_padding(
       inputs=inputs, filters=out_filters//2, kernel_size=3, strides=1,
@@ -86,7 +86,7 @@ def bottleneck_block(inputs, in_filters, out_filters, is_training, data_format, 
       inputs=inputs, filters=out_filters, kernel_size=1, strides=1,
       data_format=data_format, name=None if name is None else name+'_1x1_up')
 
-  return inputs + shortcut
+  return tf.add(inputs, shortcut, name=None if name is None else name+'_elem_add')
 
 def dozen_bottleneck_blocks(inputs, in_filters, out_filters, num_modules, is_training, data_format, name=None):
   for m in range(num_modules):
@@ -121,23 +121,24 @@ def hourglass(inputs, filters, is_training, data_format, deep_index=1, num_modul
   #   downchannal3 = bottleneck_block(downchannal3, filters, filters, is_training, data_format, name=None if name is None else name+'_down3_{}'.format(m))
 
   if data_format == 'channels_first':
-      downchannal3 = tf.transpose(downchannal3, [0, 2, 3, 1])
-
-  input_shape = tf.shape(downchannal3)[-3:-1]
-  upchannal2 = tf.image.resize_images(downchannal3, input_shape * 2, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+      downchannal3 = tf.transpose(downchannal3, [0, 2, 3, 1], name=None if name is None else name+'_trans')
+  # for visualise
+  with tf.name_scope(name+'_get_shape', "get_shape", [downchannal3]) as scope:
+    input_shape = tf.shape(downchannal3)[-3:-1] * 2
+  upchannal2 = tf.image.resize_bilinear(downchannal3, input_shape, name=None if name is None else name+'_resize')
   if data_format == 'channels_first':
-    upchannal2 = tf.transpose(upchannal2, [0, 3, 1, 2])
+    upchannal2 = tf.transpose(upchannal2, [0, 3, 1, 2], name=None if name is None else name+'_trans_inv')
 
-  return upchannal1 + upchannal2
+  return tf.add(upchannal1, upchannal2, name=None if name is None else name+'_elem_add')
 
-def create_model(inputs, num_stack, feat_channals, output_channals, num_modules, is_training, data_format, name):
+def create_model(inputs, num_stack, feat_channals, output_channals, num_modules, is_training, data_format):
   inputs = conv2d_fixed_padding(inputs=inputs, filters=64, kernel_size=7, strides=2,
-            data_format=data_format, kernel_initializer=conv_bn_initializer_to_use, name='precede_7x7')
-  inputs = batch_norm_relu(inputs, is_training, data_format, name='precede_bn')
+            data_format=data_format, kernel_initializer=conv_bn_initializer_to_use, name='precede/conv_7x7')
+  inputs = batch_norm_relu(inputs, is_training, data_format, name='precede/bn')
 
   inputs = bottleneck_block(inputs, 64, 128, is_training, data_format, name='precede/residual1')
   inputs = tf.layers.max_pooling2d(inputs=inputs, pool_size=2, strides=2, padding='valid',
-              data_format=data_format, name='precede_pool')
+              data_format=data_format, name='precede/pool')
 
   inputs = bottleneck_block(inputs, 128, 128, is_training, data_format, name='precede/residual2')
   inputs = bottleneck_block(inputs, 128, feat_channals, is_training, data_format, name='precede/residual3')
@@ -147,7 +148,7 @@ def create_model(inputs, num_stack, feat_channals, output_channals, num_modules,
   for stack_index in range(num_stack):
     hg = hourglass(hg_inputs, feat_channals, is_training, data_format, deep_index=4, num_modules=num_modules, name='stack_{}/hg'.format(stack_index))
 
-    hg = dozen_bottleneck_blocks(hg, feat_channals, feat_channals, num_modules, is_training, data_format, name=None if name is None else 'stack_{}/'.format(stack_index) + 'output_{}')
+    hg = dozen_bottleneck_blocks(hg, feat_channals, feat_channals, num_modules, is_training, data_format, name='stack_{}/'.format(stack_index) + 'output_{}')
     # for m in range(num_modules):
     #   hg = bottleneck_block(hg, feat_channals, feat_channals, is_training, data_format, name='stack_{}/output_{}'.format(stack_index, m))
 
@@ -157,13 +158,12 @@ def create_model(inputs, num_stack, feat_channals, output_channals, num_modules,
 
     # produce heatmap from prediction
     # use variable_scope to help model resotre name filter
-    with tf.variable_scope('hg_heatmap', default_name=None, values=[output_scores], reuse=tf.AUTO_REUSE):
-      heatmap = tf.layers.conv2d(inputs=output_scores, filters=output_channals, kernel_size=1,
+    heatmap = tf.layers.conv2d(inputs=output_scores, filters=output_channals, kernel_size=1,
                                 strides=1, padding='same', use_bias=True, activation=None,
                                 kernel_initializer=initializer_to_use(),
                                 bias_initializer=tf.zeros_initializer(),
                                 data_format=data_format,
-                                name='stack_{}/heatmap_1x1'.format(stack_index))
+                                name='hg_heatmap/stack_{}/heatmap_1x1'.format(stack_index))
 
 
     outputs_list.append(heatmap)
@@ -176,16 +176,17 @@ def create_model(inputs, num_stack, feat_channals, output_channals, num_modules,
                           data_format=data_format,
                           name='stack_{}/remap_outputs'.format(stack_index))
       # use variable_scope to help model resotre name filter
-      with tf.variable_scope('hg_heatmap', default_name=None, values=[heatmap], reuse=tf.AUTO_REUSE):
-        heatmap_ = tf.layers.conv2d(inputs=heatmap, filters=feat_channals, kernel_size=1,
+      heatmap_ = tf.layers.conv2d(inputs=heatmap, filters=feat_channals, kernel_size=1,
                         strides=1, padding='same', use_bias=True, activation=None,
                         kernel_initializer=initializer_to_use(),
                         bias_initializer=tf.zeros_initializer(),
                         data_format=data_format,
-                        name='stack_{}/remap_heatmap'.format(stack_index))
+                        name='hg_heatmap/stack_{}/remap_heatmap'.format(stack_index))
 
       # next hourglass inputs
-      hg_inputs = hg_inputs + output_scores_ + heatmap_
+      fused_heatmap = tf.add(output_scores_, heatmap_, 'stack_{}/fused_heatmap'.format(stack_index))
+      hg_inputs = tf.add(hg_inputs, fused_heatmap, 'stack_{}/next_inputs'.format(stack_index))
+      #hg_inputs = hg_inputs + output_scores_ + heatmap_
 
   return outputs_list
 
