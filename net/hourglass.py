@@ -134,7 +134,7 @@ def hourglass(inputs, filters, is_training, data_format, deep_index=1, num_modul
 def create_model(inputs, num_stack, feat_channals, output_channals, num_modules, is_training, data_format):
   inputs = conv2d_fixed_padding(inputs=inputs, filters=64, kernel_size=7, strides=2,
             data_format=data_format, kernel_initializer=conv_bn_initializer_to_use, name='precede/conv_7x7')
-  inputs = batch_norm_relu(inputs, is_training, data_format, name='precede/bn')
+  inputs = batch_norm_relu(inputs, is_training, data_format, name='precede/inputs_bn')
 
   inputs = bottleneck_block(inputs, 64, 128, is_training, data_format, name='precede/residual1')
   inputs = tf.layers.max_pooling2d(inputs=inputs, pool_size=2, strides=2, padding='valid',

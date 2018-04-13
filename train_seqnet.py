@@ -76,7 +76,7 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     'mse_weight', 1.0, 'The weight decay on the model weights.')
 tf.app.flags.DEFINE_float(
-    'momentum', 0.9,
+    'momentum', 0.0,#0.9
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
 tf.app.flags.DEFINE_float('learning_rate', 2.5e-4, 'Initial learning rate.')#2.5e-4
 tf.app.flags.DEFINE_float(

@@ -99,7 +99,7 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     'mse_weight', 1.0, 'The weight decay on the model weights.')
 tf.app.flags.DEFINE_float(
-    'momentum', 0.9,
+    'momentum', 0.0,#0.9
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
 tf.app.flags.DEFINE_float('learning_rate', 2.5e-4, 'Initial learning rate.')#2.5e-4
 tf.app.flags.DEFINE_float(
@@ -303,7 +303,7 @@ def keypoint_model_fn(features, labels, mode, params):
     # doing so leads to a small improvement in accuracy.
     loss = mse_loss + params['weight_decay'] * tf.add_n(
                               [tf.nn.l2_loss(v) for v in tf.trainable_variables()
-                               if 'batch_normalization' not in v.name])
+                               if '_bn' not in v.name])
     total_loss = tf.identity(loss, name='total_loss')
     tf.summary.scalar('loss', total_loss)
 
@@ -387,7 +387,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
         fashionAI.train(input_fn=lambda : input_pipeline(True), hooks=[logging_hook])
 
         tf.logging.info('Starting to evaluate.')
-        eval_results = fashionAI.evaluate(input_fn=lambda : input_pipeline(False, 1))
+        eval_results = fashionAI.evaluate(input_fn=lambda : input_pipeline(False, model_scope, 1))
         tf.logging.info(eval_results)
     tf.logging.info('Finished model {}.'.format(model_scope))
 
