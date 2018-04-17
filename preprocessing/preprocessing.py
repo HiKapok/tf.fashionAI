@@ -712,7 +712,7 @@ def preprocess_for_train(image,
   """
   with tf.name_scope(scope, 'vgg_distort_image', [image, output_height, output_width]):
     fkey_x, fkey_y = tf.cast(key_x, tf.float32), tf.cast(key_y, tf.float32)
-
+    #print(fkey_x, fkey_y)
     # rotate transform, with bbox contains the clothes region
     image, fkey_x, fkey_y, bbox = rotate_augum(image, shape, fkey_x, fkey_y, bbox_border)
 
@@ -774,6 +774,7 @@ def preprocess_for_train(image,
 
     # new_key_x = tf.Print(new_key_x,[new_key_x])
     # new_key_y = tf.Print(new_key_y,[new_key_y])
+    #new_key_x = tf.Print(new_key_x,[tf.shape(new_key_x)])
     targets, isvalid = draw_labelmap(new_key_x, new_key_y, heatmap_sigma, heatmap_size)
     #norm_gather_ind_ = config.normalize_point_ind_by_id[classid]
 
@@ -810,6 +811,7 @@ def preprocess_for_train(image,
       normarlized_image = _mean_image_subtraction(distorted_image, [_R_MEAN, _G_MEAN, _B_MEAN])
     if data_format == 'NCHW':
       normarlized_image = tf.transpose(normarlized_image, perm=(2, 0, 1))
+
     return normarlized_image/255., targets, new_key_v, isvalid, norm_value
 
 

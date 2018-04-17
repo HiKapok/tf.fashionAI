@@ -60,10 +60,10 @@ for k, v in key2ind.items():
 class_num_joints = {
     '*': 24,
     'blouse': 13,
-    'dress': 14,
-    'outwear': 7,
+    'dress': 15,
+    'outwear': 14,
     'skirt': 4,
-    'trousers': 15
+    'trousers': 7
 }
 
 # |0|1|2|3|4|

@@ -87,7 +87,7 @@ def get_latest_checkpoint_for_evaluate(flags):
 
     return checkpoint_path
 
-def get_init_fn_for_scaffold_(checkpoint_path, model_dir, checkpoint_exclude_scopes, model_scope, checkpoint_model_scope, ignore_missing_vars):
+def get_init_fn_for_scaffold_(checkpoint_path, model_dir, checkpoint_exclude_scopes, model_scope, checkpoint_model_scope, ignore_missing_vars, use_v1=False):
     flags_checkpoint_path = checkpoint_path
     # Warn the user if a checkpoint exists in the model_dir. Then ignore.
     if tf.train.latest_checkpoint(model_dir):
@@ -147,7 +147,7 @@ def get_init_fn_for_scaffold_(checkpoint_path, model_dir, checkpoint_exclude_sco
                 tf.logging.warning('Variable %s missing in checkpoint %s', var, checkpoint_path)
         variables_to_restore = available_vars
     if variables_to_restore:
-        saver = tf.train.Saver(variables_to_restore, reshape=False)
+        saver = tf.train.Saver(variables_to_restore, reshape=False, write_version=tf.train.SaverDef.V1 if use_v1 else tf.train.SaverDef.V2)
         saver.build()
         def callback(scaffold, session):
             saver.restore(session, checkpoint_path)

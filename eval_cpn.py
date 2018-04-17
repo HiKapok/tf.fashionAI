@@ -23,7 +23,7 @@ import pandas as pd
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
-from net import hourglass as hg
+from net import cpn as cpn
 from utility import train_helper
 
 from preprocessing import preprocessing
@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs/',
+    'model_dir', './logs_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -59,17 +59,14 @@ tf.app.flags.DEFINE_integer(
     'The frequency with which summaries are saved, in seconds.')
 # model related configuration
 tf.app.flags.DEFINE_integer(
-    'train_image_size', 256,
+    'train_image_size', 320,
     'The size of the input image for the model to use.')
 tf.app.flags.DEFINE_integer(
-    'heatmap_size', 64,
+    'heatmap_size', 160,
     'The size of the output heatmap of the model.')
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,
     'The sigma of Gaussian which generate the target heatmap.')
-tf.app.flags.DEFINE_integer('feats_channals', 256, 'Number of features in the hourglass.')
-tf.app.flags.DEFINE_integer('num_stacks', 8, 'Number of hourglasses to stack.')#8
-tf.app.flags.DEFINE_integer('num_modules', 1, 'Number of residual modules at each location in the hourglass.')
 tf.app.flags.DEFINE_float(
     'bbox_border', 25.,
     'The nearest distance of the crop border to al keypoints.')
@@ -80,20 +77,20 @@ tf.app.flags.DEFINE_string(
     'with CPU. If left unspecified, the data format will be chosen '
     'automatically based on whether TensorFlow was built for CPU or GPU.')
 tf.app.flags.DEFINE_integer(
-    'tf_random_seed', 20180406, 'Random seed for TensorFlow initializers.')
+    'tf_random_seed', 20180417, 'Random seed for TensorFlow initializers.')
 # checkpoint related configuration
 tf.app.flags.DEFINE_string(
     'checkpoint_path', None,
     'The path to a checkpoint from which to fine-tune.')
 tf.app.flags.DEFINE_string(
     #'blouse', 'dress', 'outwear', 'skirt', 'trousers', 'all'
-    'model_scope', 'all',
+    'model_scope', 'blouse',
     'Model scope name used to replace the name_scope in checkpoint.')
 tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
     'Wether we will train on cloud.')
 tf.app.flags.DEFINE_string(
-    'model_to_eval', 'all, blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
+    'model_to_eval', 'blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
     'The sub-model to eval (comma-separated list).')
 
 #--model_scope=blouse --checkpoint_path=./logs/blouse
@@ -196,9 +193,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
     num_joints = config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')]
     with tf.variable_scope(params['model_scope'], default_name=None, values=[double_features], reuse=tf.AUTO_REUSE):
-        pred_outputs = hg.create_model(double_features, params['num_stacks'], params['feats_channals'],
-                            num_joints, params['num_modules'],
-                            (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
+        pred_outputs = cpn.cascaded_pyramid_net(double_features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
 
     if params['data_format'] == 'channels_last':
         pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
@@ -241,9 +236,6 @@ def eval_each(model_fn, model_dir, model_scope, run_config):
         params={
             'train_image_size': FLAGS.train_image_size,
             'heatmap_size': FLAGS.heatmap_size,
-            'feats_channals': FLAGS.feats_channals,
-            'num_stacks': FLAGS.num_stacks,
-            'num_modules': FLAGS.num_modules,
             'data_format': FLAGS.data_format,
             'model_scope': model_scope,
         })

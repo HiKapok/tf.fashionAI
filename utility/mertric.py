@@ -62,12 +62,16 @@ def normalized_error(targets, predictions, norm_value, visible, isvalid,
     gt_x, gt_y = tf.floormod(gt_indices, heatmap_size) * train_image_size / heatmap_size, tf.floordiv(gt_indices, heatmap_size) * train_image_size / heatmap_size
 
     gt_x, gt_y = tf.cast(gt_x, tf.float32), tf.cast(gt_y, tf.float32)
-
+    #print(gt_x,gt_y,pred_x,pred_y)
     #print(norm_value)
     #print(gt_x)
     #print(pred_x)
     dist = _safe_div(tf.pow(tf.pow(gt_x - pred_x, 2.) + tf.pow(gt_y - pred_y, 2.), .5), tf.expand_dims(norm_value, -1), 'norm_dist')
 
+    #print(visible, isvalid)
+
+    #dist = tf.cond(tf.equal(tf.shape(visible)[-1], tf.shape(isvalid)[-1]), lambda : tf.boolean_mask(dist, tf.logical_and(visible>0, isvalid>0)), lambda : dist)
+    #print(dist)
     dist = tf.boolean_mask(dist, tf.logical_and(visible>0, isvalid>0))
     #dist = dist * tf.cast(tf.logical_and(visible>0, isvalid>0), tf.float32)
 

@@ -97,11 +97,11 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_float(
     'weight_decay', 0.00000, 'The weight decay on the model weights.')
 tf.app.flags.DEFINE_float(
-    'mse_weight', 1.0, 'The weight decay on the model weights.')
+    'mse_weight', 1., 'The weight decay on the model weights.')
 tf.app.flags.DEFINE_float(
     'momentum', 0.0,#0.9
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
-tf.app.flags.DEFINE_float('learning_rate', 2.5e-4, 'Initial learning rate.')#2.5e-4
+tf.app.flags.DEFINE_float('learning_rate', 2.5e-3, 'Initial learning rate.')#2.5e-4
 tf.app.flags.DEFINE_float(
     'end_learning_rate', 0.000001,
     'The minimal end learning rate used by a polynomial decay learning rate.')
@@ -139,10 +139,10 @@ tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
     'Wether we will train on cloud.')
 tf.app.flags.DEFINE_boolean(
-    'seq_train', True,
+    'seq_train', False,
     'Wether we will train a sequence model.')
 tf.app.flags.DEFINE_string(
-    'model_to_train', 'all, blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
+    'model_to_train', 'blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
     'The sub-model to train (comma-separated list).')
 
 FLAGS = tf.app.flags.FLAGS
@@ -173,7 +173,7 @@ if config.PRED_DEBUG:
       save_image_with_heatmap.counter += 1
 
       img_to_save = np.array(image.tolist()) + 128
-      #print(img_to_save)
+      #print(img_to_save.shape)
 
       img_to_save = img_to_save.astype(np.uint8)
 
@@ -221,7 +221,7 @@ def get_keypoint(image, targets, predictions, heatmap_size, height, width, categ
     if config.PRED_DEBUG:
       pred_indices_ = tf.squeeze(pred_indices)
       image_ = tf.squeeze(image) * 255.
-      pred_heatmap = tf.one_hot(pred_indices_, heatmap_size*heatmap_size, on_value=255, off_value=0, axis=-1, dtype=tf.int32)
+      pred_heatmap = tf.one_hot(pred_indices_, heatmap_size*heatmap_size, on_value=1., off_value=0., axis=-1, dtype=tf.float32)
 
       pred_heatmap = tf.reshape(pred_heatmap, [-1, heatmap_size, heatmap_size])
       if data_format == 'channels_first':
@@ -229,7 +229,7 @@ def get_keypoint(image, targets, predictions, heatmap_size, height, width, categ
       save_image_op = tf.py_func(save_image_with_heatmap,
                                   [image_, height, width,
                                   heatmap_size,
-                                  tf.reshape(targets * 255., [-1, heatmap_size, heatmap_size]),
+                                  tf.reshape(pred_heatmap * 255., [-1, heatmap_size, heatmap_size]),
                                   tf.reshape(predictions, [-1, heatmap_size, heatmap_size]),
                                   config.left_right_group_map[category][0],
                                   config.left_right_group_map[category][1],
@@ -248,6 +248,7 @@ def keypoint_model_fn(features, labels, mode, params):
     norm_value = labels['norm_value']
 
     cur_batch_size = tf.shape(features)[0]
+    #features= tf.ones_like(features)
 
     with tf.variable_scope(params['model_scope'], default_name=None, values=[features], reuse=tf.AUTO_REUSE):
         pred_outputs = hg.create_model(features, params['num_stacks'], params['feats_channals'],
@@ -260,6 +261,15 @@ def keypoint_model_fn(features, labels, mode, params):
     score_map = pred_outputs[-1]
 
     pred_x, pred_y = get_keypoint(features, targets, score_map, params['heatmap_size'], params['train_image_size'], params['train_image_size'], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+
+    # this is important!!!
+    targets = 255. * targets
+
+    # print(key_v)
+    #targets = tf.reshape(255.*tf.one_hot(tf.ones_like(key_v,tf.int64)*(32*64+32), params['heatmap_size']*params['heatmap_size']), [cur_batch_size,-1,params['heatmap_size'],params['heatmap_size']])
+    #norm_value = tf.ones_like(norm_value)
+    # score_map = tf.reshape(tf.one_hot(tf.ones_like(key_v,tf.int64)*(31*64+31), params['heatmap_size']*params['heatmap_size']), [cur_batch_size,-1,params['heatmap_size'],params['heatmap_size']])
+
     #with tf.control_dependencies([pred_x, pred_y]):
     ne_mertric = mertric.normalized_error(targets, score_map, norm_value, key_v, isvalid,
                              cur_batch_size,
@@ -301,9 +311,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
     # Add weight decay to the loss. We exclude the batch norm variables because
     # doing so leads to a small improvement in accuracy.
-    loss = mse_loss + params['weight_decay'] * tf.add_n(
-                              [tf.nn.l2_loss(v) for v in tf.trainable_variables()
-                               if '_bn' not in v.name])
+    loss = mse_loss + params['weight_decay'] * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables() if 'batch_normalization' not in v.name])
     total_loss = tf.identity(loss, name='total_loss')
     tf.summary.scalar('loss', total_loss)
 
@@ -357,7 +365,6 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
             'num_stacks': FLAGS.num_stacks,
             'num_modules': FLAGS.num_modules,
             'data_format': FLAGS.data_format,
-            'model_scope': model_scope,
             'steps_per_epoch': config.split_size[(model_scope if 'all' not in model_scope else '*')]['train'] // FLAGS.batch_size,
             'batch_size': FLAGS.batch_size,
             'weight_decay': FLAGS.weight_decay,
@@ -384,7 +391,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
         logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: ', '.join(['%s=%.7f' % (k, v) for k, v in dicts.items()]))
 
         tf.logging.info('Starting a training cycle.')
-        fashionAI.train(input_fn=lambda : input_pipeline(True), hooks=[logging_hook])
+        fashionAI.train(input_fn=lambda : input_pipeline(True, model_scope, epochs_per_eval), hooks=[logging_hook])
 
         tf.logging.info('Starting to evaluate.')
         eval_results = fashionAI.evaluate(input_fn=lambda : input_pipeline(False, model_scope, 1))
@@ -413,7 +420,7 @@ def main(_):
             'all': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'all'),
                 'train_epochs': 6,
-                'epochs_per_eval': 3,
+                'epochs_per_eval': 4,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '3, 4',
                 'model_scope': 'all',
@@ -425,7 +432,7 @@ def main(_):
             'blouse': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
                 'train_epochs': 50,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 30,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '15, 30',
                 'model_scope': 'blouse',
@@ -437,7 +444,7 @@ def main(_):
             'dress': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
                 'train_epochs': 50,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 30,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '15, 30',
                 'model_scope': 'dress',
@@ -449,7 +456,7 @@ def main(_):
             'outwear': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
                 'train_epochs': 50,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 30,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '15, 30',
                 'model_scope': 'outwear',
@@ -461,7 +468,7 @@ def main(_):
             'skirt': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
                 'train_epochs': 50,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 30,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '15, 30',
                 'model_scope': 'skirt',
@@ -473,7 +480,7 @@ def main(_):
             'trousers': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
                 'train_epochs': 50,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 30,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '15, 30',
                 'model_scope': 'trousers',
@@ -488,7 +495,7 @@ def main(_):
             'blouse': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
                 'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 40,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '20, 40',
                 'model_scope': 'blouse',
@@ -500,7 +507,7 @@ def main(_):
             'dress': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
                 'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 40,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '20, 40',
                 'model_scope': 'dress',
@@ -512,7 +519,7 @@ def main(_):
             'outwear': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
                 'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 40,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '20, 40',
                 'model_scope': 'outwear',
@@ -524,7 +531,7 @@ def main(_):
             'skirt': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
                 'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 40,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '20, 40',
                 'model_scope': 'skirt',
@@ -536,7 +543,7 @@ def main(_):
             'trousers': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
                 'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'epochs_per_eval': 40,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '20, 40',
                 'model_scope': 'trousers',

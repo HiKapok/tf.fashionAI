@@ -1,47 +1,57 @@
 
-import requests
+# import requests
 
-def download_file_from_google_drive(id, destination):
-    def get_confirm_token(response):
-        for key, value in response.cookies.items():
-            if key.startswith('download_warning'):
-                return value
+# def download_file_from_google_drive(id, destination):
+#     def get_confirm_token(response):
+#         for key, value in response.cookies.items():
+#             if key.startswith('download_warning'):
+#                 return value
 
-        return None
+#         return None
 
-    def save_response_content(response, destination):
-        CHUNK_SIZE = 32768
+#     def save_response_content(response, destination):
+#         CHUNK_SIZE = 32768
 
-        with open(destination, "wb") as f:
-            for chunk in response.iter_content(CHUNK_SIZE):
-                if chunk: # filter out keep-alive new chunks
-                    f.write(chunk)
+#         with open(destination, "wb") as f:
+#             for chunk in response.iter_content(CHUNK_SIZE):
+#                 if chunk: # filter out keep-alive new chunks
+#                     f.write(chunk)
 
-    URL = "https://docs.google.com/uc?export=download"
+#     URL = "https://docs.google.com/uc?export=download"
 
-    session = requests.Session()
+#     session = requests.Session()
 
-    response = session.get(URL, params = { 'id' : id }, stream = True)
-    token = get_confirm_token(response)
+#     response = session.get(URL, params = { 'id' : id }, stream = True)
+#     token = get_confirm_token(response)
 
-    if token:
-        params = { 'id' : id, 'confirm' : token }
-        response = session.get(URL, params = params, stream = True)
+#     if token:
+#         params = { 'id' : id, 'confirm' : token }
+#         response = session.get(URL, params = params, stream = True)
 
-    save_response_content(response, destination)
+#     save_response_content(response, destination)
 
-#?id=
-if __name__ == "__main__":
+# #?id=
+# if __name__ == "__main__":
 
-    # TAKE ID FROM SHAREABLE LINK
-    file_id = '1AwG0nWFUrikd17xQpTmAj2LcwK-MbNqJ'
-    # DESTINATION FILE ON YOUR DISK
-    destination = './dd.txt'
-    download_file_from_google_drive(file_id, destination)
+#     # TAKE ID FROM SHAREABLE LINK
+#     file_id = '1AwG0nWFUrikd17xQpTmAj2LcwK-MbNqJ'
+#     # DESTINATION FILE ON YOUR DISK
+#     destination = './dd.txt'
+#     download_file_from_google_drive(file_id, destination)
 
 
 import tensorflow as tf
 
+pred = tf.constant([[[[1.11,1.12],[1.13,1.14]], [[1.21,1.22],[1.23,1.24]]], [[[2.11,2.12],[2.13,2.14]], [[2.21,2.22],[2.23,2.24]]]])
+pred = tf.segment_mean(pred, [0,0])
+
+im = tf.constant([[[[1.11,1.12,1.],[1.13,1.14,1.]], [[1.21,1.22,1.],[1.23,1.24,1.]]], [[[2.11,2.12,1.],[2.13,2.14,1.]], [[2.21,2.22,1.],[2.23,2.24,1.]]]])
+#pred = tf.reshape(tf.stack([im, im], axis=1), [-1, 2, 2, 3])
+aaaaaaa1 = tf.tile(tf.reshape(tf.range(tf.shape(pred)[0]), [-1, 1]), [1, 2])
+aaaaaaa2=tf.stack([aaaaaaa1,tf.constant([[1,0],[0,1]])], axis=-1)
+indcesss = tf.constant([[[0,1],[0,0]],[[1,1],[1,0]]])
+
+aaaaaaa = tf.gather_nd(pred, aaaaaaa2)
 
 d = {'d':12, 'f':0.12344, 'c':555.5767}
 items = d.items()
@@ -69,10 +79,13 @@ out = table.lookup(tf.constant([0,1,2,3,4], dtype=tf.int64))
 sess.run(tf.group([tf.local_variables_initializer(), tf.local_variables_initializer(), tf.tables_initializer()]))
 with sess.as_default():
     #table.init.run()
+    print(pred.eval())
+    print(aaaaaaa1.eval())
+    print(aaaaaaa2.eval())
     #print(b[0].eval())
-    print(a.eval())
-    print(b[1].eval())
-    print(pred_x.eval())
+    # print(a.eval())
+    # print(b[1].eval())
+    # print(pred_x.eval())
 
-    print(pred_y.eval())
+    # print(pred_y.eval())
 
