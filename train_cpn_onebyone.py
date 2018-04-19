@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_cpn/',
+    'model_dir', './logs_cpn_blur/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -98,7 +98,7 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     'momentum', 0.9,
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
-tf.app.flags.DEFINE_float('learning_rate', 1e-3, 'Initial learning rate.')
+tf.app.flags.DEFINE_float('learning_rate', 2e-5, 'Initial learning rate.')#1e-3
 tf.app.flags.DEFINE_float(
     'end_learning_rate', 0.000001,
     'The minimal end learning rate used by a polynomial decay learning rate.')
@@ -239,6 +239,24 @@ def get_keypoint(image, targets, predictions, heatmap_size, height, width, categ
         pred_x, pred_y = pred_x * 1., pred_y * 1.
     return pred_x, pred_y
 
+def gaussian_blur(inputs, inputs_filters, sigma, data_format, name=None):
+    with tf.name_scope(name, "gaussian_blur", [inputs]):
+        data_format_ = 'NHWC' if data_format=='channels_last' else 'NCHW'
+        if data_format_ == 'NHWC':
+            inputs = tf.transpose(inputs, [0, 2, 3, 1])
+        ksize = int(6 * sigma + 1.)
+        x = tf.expand_dims(tf.range(ksize, delta=1, dtype=tf.float32), axis=1)
+        y = tf.transpose(x, [1, 0])
+        kernel_matrix = tf.exp(- ((x - ksize/2.) ** 2 + (y - ksize/2.) ** 2) / (2 * sigma ** 2))
+        #print(kernel_matrix)
+        kernel_filter = tf.reshape(kernel_matrix, [ksize, ksize, 1, 1])
+        kernel_filter = tf.tile(kernel_filter, [1, 1, inputs_filters, 1])
+        #kernel_filter = tf.transpose(kernel_filter, [1, 0, 2, 3])
+        outputs = tf.nn.depthwise_conv2d(inputs, kernel_filter, strides=[1, 1, 1, 1], padding='SAME', data_format=data_format_, name='blur')
+        if data_format_ == 'NHWC':
+            outputs = tf.transpose(outputs, [0, 3, 1, 2])
+        return outputs
+
 def keypoint_model_fn(features, labels, mode, params):
     targets = labels['targets']
     shape = labels['shape']
@@ -264,6 +282,16 @@ def keypoint_model_fn(features, labels, mode, params):
 
     # this is important!!!
     targets = 255. * targets
+    blur_list = [1., 1.5, 2., 3., None]
+    #blur_list = [None, None, None, None, None]
+
+    targets_list = []
+    for sigma in blur_list:
+        if sigma is None:
+            targets_list.append(targets)
+        else:
+            # always channels first foe targets
+            targets_list.append(gaussian_blur(targets, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], sigma, params['data_format'], 'blur_{}'.format(sigma)))
 
     # print(key_v)
     #targets = tf.reshape(255.*tf.one_hot(tf.ones_like(key_v,tf.int64)*(params['heatmap_size']*params['heatmap_size']//2+params['heatmap_size']), params['heatmap_size']*params['heatmap_size']), [cur_batch_size,-1,params['heatmap_size'],params['heatmap_size']])
@@ -291,7 +319,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
     mse_loss_list = []
     for pred_ind in list(range(len(pred_outputs))):
-        mse_loss_list.append(tf.losses.mean_squared_error(targets, pred_outputs[pred_ind],
+        mse_loss_list.append(tf.losses.mean_squared_error(targets_list[pred_ind], pred_outputs[pred_ind],
                             weights=1.0 / tf.cast(cur_batch_size, tf.float32),
                             scope='loss_{}'.format(pred_ind),
                             loss_collection=None,#tf.GraphKeys.LOSSES,
@@ -303,7 +331,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
     # bce_loss_list = []
     # for pred_ind in list(range(len(pred_outputs))):
-    #     bce_loss_list.append(tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=pred_outputs[pred_ind], labels=targets, name='loss_{}'.format(pred_ind)), name='loss_mean_{}'.format(pred_ind)))
+    #     bce_loss_list.append(tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=pred_outputs[pred_ind], labels=targets_list[pred_ind]/255., name='loss_{}'.format(pred_ind)), name='loss_mean_{}'.format(pred_ind)))
 
     # mse_loss = tf.multiply(params['mse_weight'] / params['num_stacks'], tf.add_n(bce_loss_list), name='mse_loss')
     # tf.summary.scalar('mse', mse_loss)
@@ -551,6 +579,14 @@ def main(_):
             },
         }
     model_to_train = [s.strip() for s in FLAGS.model_to_train.split(',')]
+
+    # import datetime
+    # import time
+    # while True:
+    #     time.sleep(1600)
+    #     if '8' in datetime.datetime.now().time().strftime('%H'):
+    #         break
+
     for m in model_to_train:
         sub_loop(keypoint_model_fn, m, detail_params[m]['model_dir'], run_config, detail_params[m]['train_epochs'], detail_params[m]['epochs_per_eval'], detail_params[m]['lr_decay_factors'], detail_params[m]['decay_boundaries'], detail_params[m]['checkpoint_path'], detail_params[m]['checkpoint_exclude_scopes'], detail_params[m]['checkpoint_model_scope'], detail_params[m]['ignore_missing_vars'])
 

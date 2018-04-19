@@ -1,3 +1,17 @@
+# Copyright 2018 Changan Wang
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =============================================================================
 import os
 
 DEBUG = False
@@ -265,26 +279,32 @@ left_right_group_map = {
 }
 # train {'blouse': 10155, 'outwear': 7734, 'dress': 7224, 'skirt': 9910, 'trousers': 9142} 220825
 # test {'trousers': 1958, 'outwear': 2043, 'skirt': 1980, 'blouse': 1977, 'dress': 2038} 49980
-
+# test_b {'blouse': 1974, 'outwear': 1947, 'trousers': 1946, 'skirt': 2051, 'dress': 2052} 9970
 split_size = {
             '*': {'train': 41990,
                 'val': 2175,
-                'test': 9996},
+                'test': 9996,
+                'test_b': 9970},
             'blouse': {'train': 9618,
                 'val': 537,
-                'test': 1977},
+                'test': 1977,
+                'test_b': 1974},
             'dress': {'train': 6864,
                 'val': 360,
-                'test': 2038},
+                'test': 2038,
+                'test_b': 2052},
             'outwear': {'train': 7350,
                 'val': 384,
-                'test': 2043},
+                'test': 2043,
+                'test_b': 1947},
             'skirt': {'train': 9425,
                 'val': 485,
-                'test': 1980},
+                'test': 1980,
+                'test_b': 2051},
             'trousers': {'train': 8733,
                 'val': 409,
-                'test': 1958},
+                'test': 1958,
+                'test_b': 1946},
             }
 
 # split_size = {

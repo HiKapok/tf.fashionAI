@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs/',
+    'model_dir', './logs_8_256/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -93,7 +93,7 @@ tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
     'Wether we will train on cloud.')
 tf.app.flags.DEFINE_string(
-    'model_to_eval', 'all, blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
+    'model_to_eval', 'blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
     'The sub-model to eval (comma-separated list).')
 
 #--model_scope=blouse --checkpoint_path=./logs/blouse
@@ -188,7 +188,7 @@ def keypoint_model_fn(features, labels, mode, params):
     features = features['images']
 
     file_name = tf.identity(file_name, name='current_file')
-
+    # test augumentation on the fly
     if params['data_format'] == 'channels_last':
         double_features = tf.reshape(tf.stack([features, tf.map_fn(tf.image.flip_left_right, features, back_prop=False)], axis = 1), [-1, params['train_image_size'], params['train_image_size'], 3])
     else:
@@ -214,7 +214,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
     def cond_flip(heatmap_ind):
         return tf.cond(heatmap_ind[1] < 1, lambda : heatmap_ind[0], lambda : tf.transpose(tf.image.flip_left_right(tf.transpose(heatmap_ind[0], [1, 2, 0], name='pred_nchw2nhwc')), [2, 0, 1], name='pred_nhwc2nchw'))
-    # all the heatmap of the fliped image should also be fliped back
+    # all the heatmap of the fliped image should also be fliped back, a little complicated
     pred_outputs = [tf.map_fn(cond_flip, [pred_outputs[ind], tf.tile(tf.reshape(tf.range(2), [-1]), [tf.shape(features)[0]])], dtype=tf.float32, parallel_iterations=10, back_prop=True, swap_memory=False, infer_shape=True, name='map_fn_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
     # average predictions of left_reight_fliped image
     segment_indices = tf.reshape(tf.tile(tf.reshape(tf.range(tf.shape(features)[0]), [-1, 1]), [1, 2]), [-1])
@@ -308,6 +308,9 @@ def main(_):
         if m == '': continue
         df_list.append(pd.read_csv('./{}.csv'.format(m), encoding='utf-8'))
     pd.concat(df_list, ignore_index=True).to_csv('./sub.csv', encoding='utf-8', index=False)
+
+    if FLAGS.run_on_cloud:
+        tf.gfile.Copy('./sub.csv', os.path.join(FLAGS.model_dir, 'sub.csv'), overwrite=True)
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)

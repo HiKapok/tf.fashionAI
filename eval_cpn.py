@@ -185,7 +185,7 @@ def keypoint_model_fn(features, labels, mode, params):
     features = features['images']
 
     file_name = tf.identity(file_name, name='current_file')
-
+    # test augumentation on the fly
     if params['data_format'] == 'channels_last':
         double_features = tf.reshape(tf.stack([features, tf.map_fn(tf.image.flip_left_right, features, back_prop=False)], axis = 1), [-1, params['train_image_size'], params['train_image_size'], 3])
     else:
@@ -300,6 +300,9 @@ def main(_):
         if m == '': continue
         df_list.append(pd.read_csv('./{}.csv'.format(m), encoding='utf-8'))
     pd.concat(df_list, ignore_index=True).to_csv('./sub.csv', encoding='utf-8', index=False)
+
+    if FLAGS.run_on_cloud:
+        tf.gfile.Copy('./sub.csv', os.path.join(FLAGS.model_dir, 'sub.csv'), overwrite=True)
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)

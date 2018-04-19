@@ -42,6 +42,40 @@
 
 import tensorflow as tf
 
+
+
+heatmap_sigma = 1.
+ksize = 6 * heatmap_sigma + 1.
+
+x = tf.expand_dims(tf.range(tf.round(ksize), delta=1, dtype=tf.float32), axis=1)
+y = tf.transpose(x, [1, 0])
+hhh = tf.exp(- ((x - ksize/2.) ** 2 + (y - ksize/2.) ** 2) / (2 * heatmap_sigma ** 2))
+
+
+
+hhh_filter = tf.reshape(hhh, [tf.round(ksize), tf.round(ksize), 1, 1])
+hhh_filter = tf.transpose(hhh_filter, [1, 0, 2, 3])
+
+
+filtered_x = tf.nn.conv2d(image_resized, sobel_x_filter,
+                          strides=[1, 1, 1, 1], padding='SAME', data_format='NHWC',
+    dilations=[1, 1, 1, 1],
+    name=None)
+
+
+
+
+sess = tf.Session()
+table = tf.contrib.lookup.HashTable(
+    tf.contrib.lookup.KeyValueTensorInitializer(tf.constant([0,1,2], dtype=tf.int64), tf.constant([1,2,-1], dtype=tf.int64)), 0)
+out = table.lookup(tf.constant([0,1,2,3,4], dtype=tf.int64))
+sess.run(tf.group([tf.local_variables_initializer(), tf.local_variables_initializer(), tf.tables_initializer()]))
+with sess.as_default():
+    #table.init.run()
+    print(hhh.eval())
+
+
+
 pred = tf.constant([[[[1.11,1.12],[1.13,1.14]], [[1.21,1.22],[1.23,1.24]]], [[[2.11,2.12],[2.13,2.14]], [[2.21,2.22],[2.23,2.24]]]])
 pred = tf.segment_mean(pred, [0,0])
 

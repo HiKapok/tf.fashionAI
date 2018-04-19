@@ -1,4 +1,17 @@
-# encoding: UTF-8
+# Copyright 2018 Changan Wang
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =============================================================================
 import config
 
 import os
@@ -145,12 +158,18 @@ def convert_train(output_dir, val_per=0.05):
                  'skirt': 0,
                  'trousers': 0}
 
+    start_file_idx = {'blouse': 5,
+                 'dress': 3,
+                 'outwear': 4,
+                 'skirt': 4,
+                 'trousers': 4}
+
     for cat in config.CATEGORIES:
         total_examples = 0
         # TODO: create tfrecorder writer here
         sys.stdout.write('\nprocessing category: {}...'.format(cat))
         sys.stdout.flush()
-        file_idx = 0
+        file_idx = 0#start_file_idx[cat]
         record_idx = 0
         tf_filename = os.path.join(output_dir, '%s_%04d.tfrecord' % (cat, file_idx))
         tfrecord_writer = tf.python_io.TFRecordWriter(tf_filename)
@@ -229,7 +248,7 @@ def convert_train(output_dir, val_per=0.05):
     print(class_hist, total_examples)
     return class_hist, total_examples
 
-def convert_test(output_dir):
+def convert_test(output_dir, splits=config.SPLITS):
 
     class_hist = {'blouse': 0,
                  'dress': 0,
@@ -248,7 +267,7 @@ def convert_test(output_dir):
         tfrecord_writer = tf.python_io.TFRecordWriter(tf_filename)
         this_key_map = keymap_factory[cat]
 
-        for split in config.SPLITS:
+        for split in splits:
             if 'train' in split: continue
             sys.stdout.write('\nprocessing split: {}...\n'.format(split))
             sys.stdout.flush()
@@ -285,7 +304,7 @@ if __name__ == '__main__':
     # {'blouse': 10155, 'outwear': 7734, 'dress': 7224, 'skirt': 9910, 'trousers': 9142} 44165
     #convert_train('/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords')
     #{'trousers': 1958, 'outwear': 2043, 'skirt': 1980, 'blouse': 1977, 'dress': 2038} 9996
-    #convert_test('/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords_test')
+    #convert_test('/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords_test', ['test_b'])
 
     # test_dataset()
 

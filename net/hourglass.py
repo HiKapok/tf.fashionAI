@@ -1,3 +1,17 @@
+# Copyright 2018 Changan Wang
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =============================================================================
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -63,8 +77,7 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format, ker
               kernel_initializer=kernel_initializer(),
               data_format=data_format, name='conv2d')
 
-
-def bottleneck_block(inputs, in_filters, out_filters, is_training, data_format, name=None):
+def bottleneck_block_v2(inputs, in_filters, out_filters, is_training, data_format, name=None):
   with tf.variable_scope(name, 'bottleneck_block', values=[inputs]):
     shortcut = inputs
     inputs = batch_norm_relu(inputs, is_training, data_format, name='bn_relu_1')
@@ -92,6 +105,35 @@ def bottleneck_block(inputs, in_filters, out_filters, is_training, data_format, 
         data_format=data_format, name='1x1_up')
 
     return tf.add(inputs, shortcut, name='elem_add')
+
+def bottleneck_block_v1(inputs, in_filters, out_filters, is_training, data_format, name=None):
+  with tf.variable_scope(name, 'bottleneck_block_v1', values=[inputs]):
+    shortcut = inputs
+    if in_filters != out_filters:
+      shortcut = conv2d_fixed_padding(
+                  inputs=shortcut, filters=out_filters, kernel_size=1, strides=1,
+                  data_format=data_format, name='skip')
+      shortcut = batch_norm(shortcut, is_training, data_format, name='skip_bn')
+
+    inputs = conv2d_fixed_padding(
+        inputs=inputs, filters=out_filters//2, kernel_size=1, strides=1,
+        data_format=data_format, name='1x1_down')
+    inputs = batch_norm_relu(inputs, is_training, data_format, name='bn_relu_1')
+
+    inputs = conv2d_fixed_padding(
+        inputs=inputs, filters=out_filters//2, kernel_size=3, strides=1,
+        data_format=data_format, name='3x3_conv')
+    inputs = batch_norm_relu(inputs, is_training, data_format, name='bn_relu_2')
+
+    inputs = conv2d_fixed_padding(
+        inputs=inputs, filters=out_filters, kernel_size=1, strides=1,
+        data_format=data_format, name='1x1_up')
+    inputs = batch_norm(inputs, is_training, data_format, name='up_bn')
+
+    return tf.nn.relu(tf.add(inputs, shortcut, name='elem_add'), name='relu')
+
+
+bottleneck_block = bottleneck_block_v2
 
 def dozen_bottleneck_blocks(inputs, in_filters, out_filters, num_modules, is_training, data_format, name=None):
   for m in range(num_modules):
