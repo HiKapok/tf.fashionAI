@@ -22,7 +22,7 @@ import numpy as np
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
-from net import cpn as cpn
+from net import detnet_cpn as cpn
 from utility import train_helper
 from utility import mertric
 
@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_cpn_blur_temp/',
+    'model_dir', './logs_detnet_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -493,7 +493,7 @@ def main(_):
                 'model_scope': 'blouse',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'blouse/feature_pyramid/conv_heatmap, blouse/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'blouse/additional_layer, blouse/feature_pyramid/conv_heatmap, blouse/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
             'dress': {
@@ -505,7 +505,7 @@ def main(_):
                 'model_scope': 'dress',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'dress/feature_pyramid/conv_heatmap, dress/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'dress/additional_layer, dress/feature_pyramid/conv_heatmap, dress/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
             'outwear': {
@@ -517,7 +517,7 @@ def main(_):
                 'model_scope': 'outwear',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'outwear/feature_pyramid/conv_heatmap, outwear/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'outwear/additional_layer, outwear/feature_pyramid/conv_heatmap, outwear/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
             'skirt': {
@@ -529,7 +529,7 @@ def main(_):
                 'model_scope': 'skirt',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'skirt/feature_pyramid/conv_heatmap, skirt/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'skirt/additional_layer, skirt/feature_pyramid/conv_heatmap, skirt/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
             'trousers': {
@@ -541,7 +541,7 @@ def main(_):
                 'model_scope': 'trousers',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'trousers/feature_pyramid/conv_heatmap, trousers/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'trousers/additional_layer, trousers/feature_pyramid/conv_heatmap, trousers/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
         }
@@ -556,7 +556,7 @@ def main(_):
                 'model_scope': 'blouse',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'blouse/feature_pyramid, blouse/global_net',
+                'checkpoint_exclude_scopes': 'blouse/additional_layer, blouse/feature_pyramid, blouse/global_net',
                 'ignore_missing_vars': True,
             },
             'dress': {
@@ -568,7 +568,7 @@ def main(_):
                 'model_scope': 'dress',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'dress/feature_pyramid, dress/global_net',
+                'checkpoint_exclude_scopes': 'dress/additional_layer, dress/feature_pyramid, dress/global_net',
                 'ignore_missing_vars': True,
             },
             'outwear': {
@@ -580,7 +580,7 @@ def main(_):
                 'model_scope': 'outwear',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'outwear/feature_pyramid, outwear/global_net',
+                'checkpoint_exclude_scopes': 'outwear/additional_layer, outwear/feature_pyramid, outwear/global_net',
                 'ignore_missing_vars': True,
             },
             'skirt': {
@@ -592,7 +592,7 @@ def main(_):
                 'model_scope': 'skirt',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'skirt/feature_pyramid, skirt/global_net',
+                'checkpoint_exclude_scopes': 'skirt/additional_layer, skirt/feature_pyramid, skirt/global_net',
                 'ignore_missing_vars': True,
             },
             'trousers': {
@@ -604,7 +604,7 @@ def main(_):
                 'model_scope': 'trousers',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'trousers/feature_pyramid, trousers/global_net',
+                'checkpoint_exclude_scopes': 'trousers/additional_layer, trousers/feature_pyramid, trousers/global_net',
                 'ignore_missing_vars': True,
             },
         }

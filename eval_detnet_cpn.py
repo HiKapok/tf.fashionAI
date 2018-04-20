@@ -23,7 +23,7 @@ import pandas as pd
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
-from net import cpn as cpn
+from net import detnet_cpn as cpn
 from utility import train_helper
 
 from preprocessing import preprocessing

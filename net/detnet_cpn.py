@@ -174,8 +174,56 @@ def block_layer(inputs, filters, bottleneck, block_fn, blocks, strides,
 
     return tf.identity(inputs, name)
 
-def cpn_backbone(inputs, istraining, data_format):
-    block_strides = [1, 2, 2, 2]
+def _dilated_bottleneck_block_v1(inputs, filters, training, projection_shortcut, data_format):
+    shortcut = inputs
+
+    if projection_shortcut is not None:
+        shortcut = projection_shortcut(inputs)
+        shortcut = batch_norm(inputs=shortcut, training=training,
+                              data_format=data_format)
+
+    inputs = conv2d_fixed_padding(
+                inputs=inputs, filters=filters, kernel_size=1, strides=1,
+                data_format=data_format)
+    inputs = batch_norm(inputs, training, data_format)
+    inputs = tf.nn.relu(inputs)
+
+    inputs = tf.layers.conv2d(inputs=inputs, filters=filters, kernel_size=3, strides=1,
+                  dilation_rate=(2, 2), padding='SAME', use_bias=False,
+                  kernel_initializer=tf.glorot_uniform_initializer(),
+                  data_format=data_format, name=None)
+
+    inputs = batch_norm(inputs, training, data_format)
+    inputs = tf.nn.relu(inputs)
+
+    inputs = conv2d_fixed_padding(
+                inputs=inputs, filters=4 * filters, kernel_size=1, strides=1,
+                data_format=data_format)
+    inputs = batch_norm(inputs, training, data_format)
+    #print(inputs)
+    inputs += shortcut
+    inputs = tf.nn.relu(inputs)
+
+    return inputs
+
+def dilated_block_layer(inputs, filters, bottleneck, block_fn, blocks,
+                training, name, data_format):
+    # Bottleneck blocks end with 4x the number of filters as they start with
+    filters_out = filters * 4 if bottleneck else filters
+
+    def projection_shortcut(inputs):
+        return conv2d_fixed_padding(inputs=inputs, filters=filters_out, kernel_size=1, strides=1, data_format=data_format)
+
+    # Only the first block per block_layer uses projection_shortcut and strides
+    inputs = block_fn(inputs, filters, training, projection_shortcut, data_format)
+
+    for _ in range(1, blocks):
+        inputs = block_fn(inputs, filters, training, None, data_format)
+
+    return tf.identity(inputs, name)
+
+def detnet_cpn_backbone(inputs, istraining, data_format):
+    block_strides = [1, 2, 2]
     inputs = conv2d_fixed_padding(inputs=inputs, filters=64, kernel_size=7, strides=2, data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer)
     inputs = tf.identity(inputs, 'initial_conv')
 
@@ -183,7 +231,7 @@ def cpn_backbone(inputs, istraining, data_format):
     inputs = tf.identity(inputs, 'initial_max_pool')
 
     end_points = []
-    for i, num_blocks in enumerate([3, 4, 6, 3]):
+    for i, num_blocks in enumerate([3, 4, 6]):
       num_filters = 64 * (2**i)
       #with tf.variable_scope('block_{}'.format(i), 'resnet50', values=[inputs]):
       inputs = block_layer(
@@ -193,7 +241,22 @@ def cpn_backbone(inputs, istraining, data_format):
           name='block_layer{}'.format(i + 1), data_format=data_format)
       end_points.append(inputs)
 
-    return end_points
+    #print(inputs)
+    with tf.variable_scope('additional_layer', 'additional_layer', values=[inputs]):
+      # conv5
+      inputs = dilated_block_layer(
+            inputs=inputs, filters=256, bottleneck=True,
+            block_fn=_dilated_bottleneck_block_v1, blocks=3, training=istraining,
+            name='block_layer{}'.format(4), data_format=data_format)
+      end_points.append(inputs)
+      # conv6
+      inputs = dilated_block_layer(
+            inputs=inputs, filters=256, bottleneck=True,
+            block_fn=_dilated_bottleneck_block_v1, blocks=3, training=istraining,
+            name='block_layer{}'.format(5), data_format=data_format)
+      end_points.append(inputs)
+
+    return end_points[1:]
 
 def global_net_bottleneck_block(inputs, filters, istraining, data_format, projection_shortcut=None, name=None):
     with tf.variable_scope(name, 'global_net_bottleneck', values=[inputs]):
@@ -226,7 +289,7 @@ def global_net_bottleneck_block(inputs, filters, istraining, data_format, projec
 
 def cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format):
     #with tf.variable_scope('resnet50', 'resnet50', values=[inputs]):
-    end_points = cpn_backbone(inputs, istraining, data_format)
+    end_points = detnet_cpn_backbone(inputs, istraining, data_format)
     pyramid_len = len(end_points)
     up_sampling = None
     pyramid_heatmaps = []
@@ -235,16 +298,17 @@ def cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data
         # top-down
         for ind, pyramid in enumerate(reversed(end_points)):
             inputs = conv2d_fixed_padding(inputs=pyramid, filters=256, kernel_size=1, strides=1,
-                          data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer, name='1x1_conv1_p{}'.format(pyramid_len - ind))
-            lateral = tf.nn.relu(inputs, name='relu1_p{}'.format(pyramid_len - ind))
+                          data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer, name='1x1_conv1_p{}'.format(pyramid_len - ind + 1))
+            lateral = tf.nn.relu(inputs, name='relu1_p{}'.format(pyramid_len - ind + 1))
             if up_sampling is not None:
-                if data_format == 'channels_first':
-                    up_sampling = tf.transpose(up_sampling, [0, 2, 3, 1], name='trans_p{}'.format(pyramid_len - ind))
-                up_sampling = tf.image.resize_bilinear(up_sampling, tf.shape(up_sampling)[-3:-1] * 2, name='upsample_p{}'.format(pyramid_len - ind))
-                if data_format == 'channels_first':
-                    up_sampling = tf.transpose(up_sampling, [0, 3, 1, 2], name='trans_inv_p{}'.format(pyramid_len - ind))
-                up_sampling = conv2d_fixed_padding(inputs=up_sampling, filters=256, kernel_size=1, strides=1,
-                          data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer, name='up_conv_p{}'.format(pyramid_len - ind))
+                if ind > pyramid_len - 2:
+                    if data_format == 'channels_first':
+                        up_sampling = tf.transpose(up_sampling, [0, 2, 3, 1], name='trans_p{}'.format(pyramid_len - ind + 1))
+                    up_sampling = tf.image.resize_bilinear(up_sampling, tf.shape(up_sampling)[-3:-1] * 2, name='upsample_p{}'.format(pyramid_len - ind + 1))
+                    if data_format == 'channels_first':
+                        up_sampling = tf.transpose(up_sampling, [0, 3, 1, 2], name='trans_inv_p{}'.format(pyramid_len - ind + 1))
+                    up_sampling = conv2d_fixed_padding(inputs=up_sampling, filters=256, kernel_size=1, strides=1,
+                              data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer, name='up_conv_p{}'.format(pyramid_len - ind + 1))
                 up_sampling = lateral + up_sampling
                 lateral = up_sampling
             else:
@@ -253,16 +317,16 @@ def cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data
             pyramid_laterals.append(lateral)
 
             lateral = conv2d_fixed_padding(inputs=lateral, filters=256, kernel_size=1, strides=1,
-                          data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer, name='1x1_conv2_p{}'.format(pyramid_len - ind))
-            lateral = tf.nn.relu(lateral, name='relu2_p{}'.format(pyramid_len - ind))
+                          data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer, name='1x1_conv2_p{}'.format(pyramid_len - ind + 1))
+            lateral = tf.nn.relu(lateral, name='relu2_p{}'.format(pyramid_len - ind + 1))
 
             outputs = conv2d_fixed_padding(inputs=lateral, filters=output_channals, kernel_size=3, strides=1,
-                          data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer, name='conv_heatmap_p{}'.format(pyramid_len - ind))
+                          data_format=data_format, kernel_initializer=tf.glorot_uniform_initializer, name='conv_heatmap_p{}'.format(pyramid_len - ind + 1))
             if data_format == 'channels_first':
-                outputs = tf.transpose(outputs, [0, 2, 3, 1], name='output_trans_p{}'.format(pyramid_len - ind))
-            outputs = tf.image.resize_bilinear(outputs, [heatmap_size, heatmap_size], name='heatmap_p{}'.format(pyramid_len - ind))
+                outputs = tf.transpose(outputs, [0, 2, 3, 1], name='output_trans_p{}'.format(pyramid_len - ind + 1))
+            outputs = tf.image.resize_bilinear(outputs, [heatmap_size, heatmap_size], name='heatmap_p{}'.format(pyramid_len - ind + 1))
             if data_format == 'channels_first':
-                outputs = tf.transpose(outputs, [0, 3, 1, 2], name='heatmap_trans_inv_p{}'.format(pyramid_len - ind))
+                outputs = tf.transpose(outputs, [0, 3, 1, 2], name='heatmap_trans_inv_p{}'.format(pyramid_len - ind + 1))
             pyramid_heatmaps.append(outputs)
     with tf.variable_scope('global_net', 'global_net', values=pyramid_laterals):
         global_pyramids = []

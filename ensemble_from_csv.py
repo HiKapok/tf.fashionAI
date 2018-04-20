@@ -24,8 +24,14 @@ import tensorflow as tf
 
 import config
 
+
 subs_dir = './sub/need_ensemble'
-ensemble_subs = ['cpn_2_320_160_1e-3.csv', 'sub_2_hg_4_256_64.csv', 'sub_2_cpn_320_100_1e-3.csv', 'sub_2_hg_8_256_64.csv']
+ensemble_subs = ['cpn_320_160_1e-3_half_epoch.csv',
+'cpn_320_160_blur_half_epoch_2e-5.csv',
+'hg_8_256_v2_half_epoch.csv',
+'sub_2_cpn_320_100_1e-3-half_epoch.csv',
+'sub_2_hg_4_256_64-half_epoch.csv',
+'sub_2_hg_8_256_64_v1-half_epoch.csv']#['cpn_2_320_160_1e-3.csv', 'sub_2_hg_4_256_64.csv', 'sub_2_cpn_320_100_1e-3.csv', 'sub_2_hg_8_256_64.csv']
 
 def parse_comma_list(args):
     return [float(s.strip()) for s in args.split(',')]

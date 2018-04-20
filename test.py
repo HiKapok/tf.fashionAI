@@ -50,13 +50,13 @@ pred_outputs = tf.zeros_like(targets)
 sss = tf.losses.mean_squared_error(targets, pred_outputs, weights=1.0,
                                     loss_collection=None,
                                     reduction=tf.losses.Reduction.NONE)
-num_topk = 1
+num_topk = 2
 sss = tf.reduce_mean(tf.reshape(sss, [2, 2, -1]), axis=-1)
 gather_col = tf.nn.top_k(sss, k=num_topk, sorted=True)[1]
 
 gather_row = tf.reshape(tf.tile(tf.reshape(tf.range(2), [-1, 1]), [1, num_topk]), [-1, 1])
 
-gather_indcies = tf.stack([gather_row, gather_col], axis=-1)
+gather_indcies = tf.stack([gather_row, tf.reshape(gather_col, [-1, 1])], axis=-1)
 
 select_heatmap = tf.gather_nd(targets, gather_indcies)
 
