@@ -388,7 +388,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
             'ne': 'ne_mertric',
         }
 
-        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: ', '.join(['%s=%.7f' % (k, v) for k, v in dicts.items()]))
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: '{}:'.format(model_scope) + (', '.join(['%s=%.6f' % (k, v) for k, v in dicts.items()])))
 
         tf.logging.info('Starting a training cycle.')
         fashionAI.train(input_fn=lambda : input_pipeline(True, model_scope, epochs_per_eval), hooks=[logging_hook])

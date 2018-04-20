@@ -42,6 +42,37 @@
 
 import tensorflow as tf
 
+targets = tf.constant([[[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
+                       [[[11, 12], [13, 14]], [[15, 16], [17, 18]]]])
+
+pred_outputs = tf.zeros_like(targets)
+
+sss = tf.losses.mean_squared_error(targets, pred_outputs, weights=1.0,
+                                    loss_collection=None,
+                                    reduction=tf.losses.Reduction.NONE)
+num_topk = 1
+sss = tf.reduce_mean(tf.reshape(sss, [2, 2, -1]), axis=-1)
+gather_col = tf.nn.top_k(sss, k=num_topk, sorted=True)[1]
+
+gather_row = tf.reshape(tf.tile(tf.reshape(tf.range(2), [-1, 1]), [1, num_topk]), [-1, 1])
+
+gather_indcies = tf.stack([gather_row, gather_col], axis=-1)
+
+select_heatmap = tf.gather_nd(targets, gather_indcies)
+
+sess = tf.Session()
+table = tf.contrib.lookup.HashTable(
+    tf.contrib.lookup.KeyValueTensorInitializer(tf.constant([0,1,2], dtype=tf.int64), tf.constant([1,2,-1], dtype=tf.int64)), 0)
+out = table.lookup(tf.constant([0,1,2,3,4], dtype=tf.int64))
+sess.run(tf.group([tf.local_variables_initializer(), tf.local_variables_initializer(), tf.tables_initializer()]))
+with sess.as_default():
+    #table.init.run()
+    print(sss.eval())
+    print(gather_col.eval())
+    print(gather_row.eval())
+    print(gather_indcies.eval())
+    print(select_heatmap.eval())
+
 
 
 heatmap_sigma = 1.
@@ -65,14 +96,6 @@ filtered_x = tf.nn.conv2d(image_resized, sobel_x_filter,
 
 
 
-sess = tf.Session()
-table = tf.contrib.lookup.HashTable(
-    tf.contrib.lookup.KeyValueTensorInitializer(tf.constant([0,1,2], dtype=tf.int64), tf.constant([1,2,-1], dtype=tf.int64)), 0)
-out = table.lookup(tf.constant([0,1,2,3,4], dtype=tf.int64))
-sess.run(tf.group([tf.local_variables_initializer(), tf.local_variables_initializer(), tf.tables_initializer()]))
-with sess.as_default():
-    #table.init.run()
-    print(hhh.eval())
 
 
 

@@ -20,7 +20,6 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-#from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
 import config
@@ -34,7 +33,7 @@ def parse_comma_list(args):
 def mean_ensemble():
     # all test images will be put into this dict
     all_test_items = {}
-
+    # extract all predict items
     for sub_file in ensemble_subs:
         sub_file_path = os.path.join(subs_dir, sub_file)
         df = pd.read_csv(sub_file_path, header=0)

@@ -82,6 +82,9 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_integer(
     'batch_size', 10,
     'Batch size for training and evaluation.')
+tf.app.flags.DEFINE_boolean(
+    'use_ohkm', True,
+    'Wether we will use the ohkm for hard keypoints.')
 tf.app.flags.DEFINE_string(
     'data_format', 'channels_first', # 'channels_first' or 'channels_last'
     'A flag to override the data format used in the model. channels_first '
@@ -316,14 +319,40 @@ def keypoint_model_fn(features, labels, mode, params):
     predictions = {'normalized_error': ne_mertric[1]}
     ne_mertric = tf.identity(ne_mertric[1], name='ne_mertric')
 
-
     mse_loss_list = []
-    for pred_ind in list(range(len(pred_outputs))):
-        mse_loss_list.append(tf.losses.mean_squared_error(targets_list[pred_ind], pred_outputs[pred_ind],
-                            weights=1.0 / tf.cast(cur_batch_size, tf.float32),
-                            scope='loss_{}'.format(pred_ind),
-                            loss_collection=None,#tf.GraphKeys.LOSSES,
-                            reduction=tf.losses.Reduction.MEAN))# SUM, SUM_OVER_BATCH_SIZE, default mean by all elements
+    if params['use_ohkm']:
+        for pred_ind in list(range(len(pred_outputs) - 1)):
+            mse_loss_list.append(0.5 * tf.losses.mean_squared_error(targets_list[pred_ind], pred_outputs[pred_ind],
+                                weights=1.0 / tf.cast(cur_batch_size, tf.float32),
+                                scope='loss_{}'.format(pred_ind),
+                                loss_collection=None,#tf.GraphKeys.LOSSES,
+                                # mean all elements of all pixels in all batch
+                                reduction=tf.losses.Reduction.MEAN))# SUM, SUM_OVER_BATCH_SIZE, default mean by all elements
+
+        temp_loss = tf.reduce_mean(tf.reshape(tf.losses.mean_squared_error(targets_list[-1], pred_outputs[-1], weights=1.0, loss_collection=None, reduction=tf.losses.Reduction.NONE), [cur_batch_size, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], -1]), axis=-1)
+
+        num_topk = config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')] // 2
+        gather_col = tf.nn.top_k(temp_loss, k=num_topk, sorted=True)[1]
+        gather_row = tf.reshape(tf.tile(tf.reshape(tf.range(cur_batch_size), [-1, 1]), [1, num_topk]), [-1, 1])
+        gather_indcies = tf.stop_gradient(tf.stack([gather_row, gather_col], axis=-1))
+
+        select_targets = tf.gather_nd(targets_list[-1], gather_indcies)
+        select_heatmap = tf.gather_nd(pred_outputs[-1], gather_indcies)
+
+        mse_loss_list.append(tf.losses.mean_squared_error(select_targets, select_heatmap,
+                                weights=1.0 / tf.cast(cur_batch_size, tf.float32),
+                                scope='loss_{}'.format(len(pred_outputs) - 1),
+                                loss_collection=None,#tf.GraphKeys.LOSSES,
+                                # mean all elements of all pixels in all batch
+                                reduction=tf.losses.Reduction.MEAN))
+    else:
+        for pred_ind in list(range(len(pred_outputs))):
+            mse_loss_list.append(tf.losses.mean_squared_error(targets_list[pred_ind], pred_outputs[pred_ind],
+                                weights=1.0 / tf.cast(cur_batch_size, tf.float32),
+                                scope='loss_{}'.format(pred_ind),
+                                loss_collection=None,#tf.GraphKeys.LOSSES,
+                                # mean all elements of all pixels in all batch
+                                reduction=tf.losses.Reduction.MEAN))# SUM, SUM_OVER_BATCH_SIZE, default mean by all elements
 
     mse_loss = tf.multiply(params['mse_weight'], tf.add_n(mse_loss_list), name='mse_loss')
     tf.summary.scalar('mse', mse_loss)
@@ -391,6 +420,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
             'heatmap_size': FLAGS.heatmap_size,
             'data_format': FLAGS.data_format,
             'steps_per_epoch': config.split_size[(model_scope if 'all' not in model_scope else '*')]['train'] // FLAGS.batch_size,
+            'use_ohkm': FLAGS.use_ohkm,
             'batch_size': FLAGS.batch_size,
             'weight_decay': FLAGS.weight_decay,
             'mse_weight': FLAGS.mse_weight,
@@ -413,7 +443,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
             'ne': 'ne_mertric',
         }
 
-        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: ', '.join(['%s=%.7f' % (k, v) for k, v in dicts.items()]))
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: '{}:'.format(model_scope) + (', '.join(['%s=%.6f' % (k, v) for k, v in dicts.items()])))
 
         tf.logging.info('Starting a training cycle.')
         fashionAI.train(input_fn=lambda : input_pipeline(True, model_scope, epochs_per_eval), hooks=[logging_hook])
@@ -519,10 +549,10 @@ def main(_):
         detail_params = {
             'blouse': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
-                'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'train_epochs': 40,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '20, 36',
                 'model_scope': 'blouse',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
@@ -531,10 +561,10 @@ def main(_):
             },
             'dress': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
-                'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'train_epochs': 40,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '20, 36',
                 'model_scope': 'dress',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
@@ -543,10 +573,10 @@ def main(_):
             },
             'outwear': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
-                'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'train_epochs': 40,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '20, 36',
                 'model_scope': 'outwear',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
@@ -555,10 +585,10 @@ def main(_):
             },
             'skirt': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
-                'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'train_epochs': 40,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '20, 36',
                 'model_scope': 'skirt',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
@@ -567,10 +597,10 @@ def main(_):
             },
             'trousers': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
-                'train_epochs': 60,
-                'epochs_per_eval': 20,
+                'train_epochs': 40,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '20, 36',
                 'model_scope': 'trousers',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
