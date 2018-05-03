@@ -44,12 +44,12 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',#'/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',
+    'data_dir', '../Datasets/tfrecords',#'/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs/',
+    'model_dir', './logs_hg/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -62,16 +62,16 @@ tf.app.flags.DEFINE_integer(
     'The frequency with which the model is saved, in seconds.')
 # model related configuration
 tf.app.flags.DEFINE_integer(
-    'train_image_size', 256,
+    'train_image_size', 384,
     'The size of the input image for the model to use.')
 tf.app.flags.DEFINE_integer(
-    'heatmap_size', 64,
+    'heatmap_size', 96,
     'The size of the output heatmap of the model.')
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,
     'The sigma of Gaussian which generate the target heatmap.')
 tf.app.flags.DEFINE_integer('feats_channals', 256, 'Number of features in the hourglass.')
-tf.app.flags.DEFINE_integer('num_stacks', 8, 'Number of hourglasses to stack.')#8
+tf.app.flags.DEFINE_integer('num_stacks', 4, 'Number of hourglasses to stack.')#8
 tf.app.flags.DEFINE_integer('num_modules', 1, 'Number of residual modules at each location in the hourglass.')
 tf.app.flags.DEFINE_float(
     'bbox_border', 25.,
@@ -85,6 +85,9 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_integer(
     'batch_size', 6,
     'Batch size for training and evaluation.')
+tf.app.flags.DEFINE_boolean(
+    'use_ohkm', True,
+    'Wether we will use the ohkm for hard keypoints.')
 tf.app.flags.DEFINE_string(
     'data_format', 'channels_first', # 'channels_first' or 'channels_last'
     'A flag to override the data format used in the model. channels_first '
@@ -101,7 +104,7 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     'momentum', 0.0,#0.9
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
-tf.app.flags.DEFINE_float('learning_rate', 2.5e-3, 'Initial learning rate.')#2.5e-4
+tf.app.flags.DEFINE_float('learning_rate', 5e-3, 'Initial learning rate.')#2.5e-4
 tf.app.flags.DEFINE_float(
     'end_learning_rate', 0.000001,
     'The minimal end learning rate used by a polynomial decay learning rate.')
@@ -281,21 +284,56 @@ def keypoint_model_fn(features, labels, mode, params):
     #                             weights=1.0 / tf.cast(cur_batch_size, tf.float32),
     #                             name='last_pred_mse')
 
-    sq_diff = tf.reduce_sum(tf.squared_difference(targets, score_map), axis=-1)
+    # filter all invisible keypoint maybe better for this task
+    # all_visible = tf.logical_and(key_v>0, isvalid>0)
+    # targets = tf.boolean_mask(targets, all_visible)
+    # pred_outputs = [tf.boolean_mask(pred_outputs[ind], all_visible, name='boolean_mask_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+    all_visible = tf.expand_dims(tf.expand_dims(tf.cast(tf.logical_and(key_v>0, isvalid>0), tf.float32), axis=-1), axis=-1)
+    targets = targets * all_visible
+    pred_outputs = [pred_outputs[ind] * all_visible for ind in list(range(len(pred_outputs)))]
+
+    sq_diff = tf.reduce_sum(tf.squared_difference(targets, pred_outputs[-1]), axis=-1)
     last_pred_mse = tf.metrics.mean_absolute_error(sq_diff, tf.zeros_like(sq_diff), name='last_pred_mse')
 
     metrics = {'normalized_error': ne_mertric, 'last_pred_mse':last_pred_mse}
     predictions = {'normalized_error': ne_mertric[1]}
     ne_mertric = tf.identity(ne_mertric[1], name='ne_mertric')
 
-
+    base_learning_rate = params['learning_rate']
     mse_loss_list = []
-    for pred_ind in list(range(len(pred_outputs))):
-        mse_loss_list.append(tf.losses.mean_squared_error(targets, pred_outputs[pred_ind],
-                            weights=1.0 / tf.cast(cur_batch_size, tf.float32),
-                            scope='loss_{}'.format(pred_ind),
-                            loss_collection=None,#tf.GraphKeys.LOSSES,
-                            reduction=tf.losses.Reduction.MEAN))# SUM, SUM_OVER_BATCH_SIZE, default mean by all elements
+    if params['use_ohkm']:
+        base_learning_rate = 1.5 * base_learning_rate
+        for pred_ind in list(range(len(pred_outputs) - 1)):
+            mse_loss_list.append(0.6 * tf.losses.mean_squared_error(targets, pred_outputs[pred_ind],
+                                weights=1.0 / tf.cast(cur_batch_size, tf.float32),
+                                scope='loss_{}'.format(pred_ind),
+                                loss_collection=None,#tf.GraphKeys.LOSSES,
+                                # mean all elements of all pixels in all batch
+                                reduction=tf.losses.Reduction.MEAN))# SUM, SUM_OVER_BATCH_SIZE, default mean by all elements
+
+        temp_loss = tf.reduce_mean(tf.reshape(tf.losses.mean_squared_error(targets, pred_outputs[-1], weights=1.0, loss_collection=None, reduction=tf.losses.Reduction.NONE), [cur_batch_size, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], -1]), axis=-1)
+
+        num_topk = config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')] // 2
+        gather_col = tf.nn.top_k(temp_loss, k=num_topk, sorted=True)[1]
+        gather_row = tf.reshape(tf.tile(tf.reshape(tf.range(cur_batch_size), [-1, 1]), [1, num_topk]), [-1, 1])
+        gather_indcies = tf.stop_gradient(tf.stack([gather_row, tf.reshape(gather_col, [-1, 1])], axis=-1))
+
+        select_targets = tf.gather_nd(targets, gather_indcies)
+        select_heatmap = tf.gather_nd(pred_outputs[-1], gather_indcies)
+
+        mse_loss_list.append(tf.losses.mean_squared_error(select_targets, select_heatmap,
+                                weights=1.0 / tf.cast(cur_batch_size, tf.float32),
+                                scope='loss_{}'.format(len(pred_outputs) - 1),
+                                loss_collection=None,#tf.GraphKeys.LOSSES,
+                                # mean all elements of all pixels in all batch
+                                reduction=tf.losses.Reduction.MEAN))
+    else:
+        for pred_ind in list(range(len(pred_outputs))):
+            mse_loss_list.append(tf.losses.mean_squared_error(targets, pred_outputs[pred_ind],
+                                weights=1.0 / tf.cast(cur_batch_size, tf.float32),
+                                scope='loss_{}'.format(pred_ind),
+                                loss_collection=None,#tf.GraphKeys.LOSSES,
+                                reduction=tf.losses.Reduction.MEAN))# SUM, SUM_OVER_BATCH_SIZE, default mean by all elements
 
     mse_loss = tf.multiply(params['mse_weight'], tf.add_n(mse_loss_list), name='mse_loss')
     tf.summary.scalar('mse', mse_loss)
@@ -321,7 +359,7 @@ def keypoint_model_fn(features, labels, mode, params):
     if mode == tf.estimator.ModeKeys.TRAIN:
         global_step = tf.train.get_or_create_global_step()
 
-        lr_values = [params['warmup_learning_rate']] + [params['learning_rate'] * decay for decay in params['lr_decay_factors']]
+        lr_values = [params['warmup_learning_rate']] + [base_learning_rate * decay for decay in params['lr_decay_factors']]
         learning_rate = tf.train.piecewise_constant(tf.cast(global_step, tf.int32),
                                                     [params['warmup_steps']] + [int(float(ep)*params['steps_per_epoch']) for ep in params['decay_boundaries']],
                                                     lr_values)
@@ -367,6 +405,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
             'data_format': FLAGS.data_format,
             'steps_per_epoch': config.split_size[(model_scope if 'all' not in model_scope else '*')]['train'] // FLAGS.batch_size,
             'batch_size': FLAGS.batch_size,
+            'use_ohkm': FLAGS.use_ohkm,
             'weight_decay': FLAGS.weight_decay,
             'mse_weight': FLAGS.mse_weight,
             'momentum': FLAGS.momentum,
@@ -494,10 +533,10 @@ def main(_):
         detail_params = {
             'blouse': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
-                'train_epochs': 60,
-                'epochs_per_eval': 40,
+                'train_epochs': 40,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'blouse',
                 'checkpoint_path': None,
                 'checkpoint_model_scope': '',
@@ -506,10 +545,10 @@ def main(_):
             },
             'dress': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
-                'train_epochs': 60,
-                'epochs_per_eval': 40,
+                'train_epochs': 40,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'dress',
                 'checkpoint_path': None,
                 'checkpoint_model_scope': '',
@@ -518,10 +557,10 @@ def main(_):
             },
             'outwear': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
-                'train_epochs': 60,
-                'epochs_per_eval': 40,
+                'train_epochs': 40,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'outwear',
                 'checkpoint_path': None,
                 'checkpoint_model_scope': '',
@@ -530,10 +569,10 @@ def main(_):
             },
             'skirt': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
-                'train_epochs': 60,
-                'epochs_per_eval': 40,
+                'train_epochs': 40,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'skirt',
                 'checkpoint_path': None,
                 'checkpoint_model_scope': '',
@@ -542,10 +581,10 @@ def main(_):
             },
             'trousers': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
-                'train_epochs': 60,
-                'epochs_per_eval': 40,
+                'train_epochs': 40,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 40',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'trousers',
                 'checkpoint_path': None,
                 'checkpoint_model_scope': '',

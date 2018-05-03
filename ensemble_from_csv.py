@@ -24,14 +24,16 @@ import tensorflow as tf
 
 import config
 
+subs_dir = '../Submit/ensemble'
+# ensemble_subs = ['cpn_320_160_1e-3_half_epoch.csv',
+# 'cpn_320_160_blur_half_epoch_2e-5.csv',
+# 'hg_8_256_v2_half_epoch.csv',
+# 'sub_2_cpn_320_100_1e-3-half_epoch.csv',
+# 'sub_2_hg_4_256_64-half_epoch.csv',
+# 'sub_2_hg_8_256_64_v1-half_epoch.csv']#['cpn_2_320_160_1e-3.csv', 'sub_2_hg_4_256_64.csv', 'sub_2_cpn_320_100_1e-3.csv', 'sub_2_hg_8_256_64.csv']
 
-subs_dir = './sub/need_ensemble'
-ensemble_subs = ['cpn_320_160_1e-3_half_epoch.csv',
-'cpn_320_160_blur_half_epoch_2e-5.csv',
-'hg_8_256_v2_half_epoch.csv',
-'sub_2_cpn_320_100_1e-3-half_epoch.csv',
-'sub_2_hg_4_256_64-half_epoch.csv',
-'sub_2_hg_8_256_64_v1-half_epoch.csv']#['cpn_2_320_160_1e-3.csv', 'sub_2_hg_4_256_64.csv', 'sub_2_cpn_320_100_1e-3.csv', 'sub_2_hg_8_256_64.csv']
+ensemble_subs = ['cpn-ohkm-384-96-lr1e-4-b12.csv', 'hg-ohkm-384-96-4-lr5e-3-b6.csv', 'det-cpn-ohkm-384-96-lr1e-4-b10.csv']
+
 
 def parse_comma_list(args):
     return [float(s.strip()) for s in args.split(',')]
@@ -81,7 +83,7 @@ def mean_ensemble():
         #break
         df.loc[cur_record] = [k, v[0][0]] + temp_list
         cur_record = cur_record + 1
-    df.sort_values('image_id').to_csv('./ensmeble_test.csv', encoding='utf-8', index=False)
+    df.sort_values('image_id').to_csv(os.path.join(subs_dir, 'ensmeble.csv'), encoding='utf-8', index=False)
 
 if __name__ == '__main__':
     mean_ensemble()

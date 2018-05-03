@@ -43,9 +43,16 @@ import config
 
 slim = tf.contrib.slim
 
-_R_MEAN = 123.68
-_G_MEAN = 116.78
-_B_MEAN = 103.94
+# _R_MEAN = 123.68
+# _G_MEAN = 116.78
+# _B_MEAN = 103.94
+_R_MEAN = 171.04
+_G_MEAN = 162.98
+_B_MEAN = 159.89
+# std: 62.37, 64.64, 64.36
+
+# [171.04052664596992, 162.98214001911154, 159.88648003318914]
+# [62.370313796103616, 64.64434475667025, 64.35966787914904]
 
 _RESIZE_SIDE_MIN = 256
 _RESIZE_SIDE_MAX = 512
@@ -652,7 +659,7 @@ def rotate_augum(image, shape, fkey_x, fkey_y, bbox_border):
   bak_fkey_x, bak_fkey_y, bak_image = fkey_x/tf.cast(shape[1], tf.float32), fkey_y/tf.cast(shape[0], tf.float32), image
   # do rotate for image and all point, and use these new point to crop later
   # transform keypoint and image
-  image, fkey_x, fkey_y = tf.cond(tf.random_uniform([1], minval=0., maxval=1., dtype=tf.float32)[0] < 0.94, lambda: rotate_all(image, tf.random_uniform([1], minval=-3.14/6., maxval=3.14/6., dtype=tf.float32)[0], fkey_x, fkey_y), lambda: (image, fkey_x, fkey_y))
+  image, fkey_x, fkey_y = tf.cond(tf.random_uniform([1], minval=0., maxval=1., dtype=tf.float32)[0] < 0.4, lambda: rotate_all(image, tf.random_uniform([1], minval=-3.14/6., maxval=3.14/6., dtype=tf.float32)[0], fkey_x, fkey_y), lambda: (image, fkey_x, fkey_y))
   #image = tf.Print(image,[fkey_x, fkey_y])
   # normalize keypoint coord
   fkey_x, fkey_y = fkey_x/tf.cast(shape[1], tf.float32), fkey_y/tf.cast(shape[0], tf.float32)

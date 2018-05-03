@@ -23,7 +23,7 @@ import pandas as pd
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
-from net import cpn as cpn
+from net import seresnet_cpn as cpn
 from utility import train_helper
 
 from preprocessing import preprocessing
@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_cpn/',
+    'model_dir', './logs_se_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -64,6 +64,9 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_integer(
     'heatmap_size', 96,
     'The size of the output heatmap of the model.')
+tf.app.flags.DEFINE_string(
+    'backbone', 'seresnet50',#or seresnext50
+    'The backbone network to use for feature pyramid.')
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,
     'The sigma of Gaussian which generate the target heatmap.')
@@ -177,6 +180,10 @@ def get_keypoint(image, predictions, heatmap_size, height, width, category, clip
         pred_x, pred_y = pred_x * 1., pred_y * 1.
     return pred_x, pred_y
 
+cpn_backbone = cpn.cascaded_pyramid_net
+if 'seresnext50' in FLAGS.backbone:
+    cpn_backbone = cpn.xt_cascaded_pyramid_net
+
 def keypoint_model_fn(features, labels, mode, params):
     #print(features)
     shape = features['shape']
@@ -193,7 +200,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
     num_joints = config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')]
     with tf.variable_scope(params['model_scope'], default_name=None, values=[double_features], reuse=tf.AUTO_REUSE):
-        pred_outputs = cpn.cascaded_pyramid_net(double_features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
+        pred_outputs = cpn_backbone(double_features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
 
     if params['data_format'] == 'channels_last':
         pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]

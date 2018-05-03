@@ -52,4 +52,4 @@ def print_all_tensors_name(file_name):
                   "with SNAPPY.")
 
 if __name__ == "__main__":
-    print_all_tensors_name('/media/rs/0E06CD1706CD0127/Kapok/Chi/Codes/model/resnet_v1_50_2016_08_28/resnet_v1_50.ckpt')
+    print_all_tensors_name('/media/rs/0E06CD1706CD0127/Kapok/Chi/fashionAI/Codes/model/seresnet50/se_resnet50.ckpt')

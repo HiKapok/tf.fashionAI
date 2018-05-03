@@ -39,11 +39,44 @@
 #     destination = './dd.txt'
 #     download_file_from_google_drive(file_id, destination)
 
+import torch.nn.functional as F
+import torch
+print(F.smooth_l1_loss(torch.Tensor([[21]]), torch.Tensor([[0]]), size_average=False).data[0])
+print(F.smooth_l1_loss(torch.Tensor([[21,22,23,24]]), torch.Tensor([[0,0,0,0]]), size_average=False).data[0])
+print(F.smooth_l1_loss(torch.Tensor([[11,12,13,14]]), torch.Tensor([[0,0,0,0]]), size_average=False).data[0])
+print(F.smooth_l1_loss(torch.Tensor([[21,22,23,24], [11,12,13,14]]), torch.Tensor([[0,0,0,0],[0,0,0,0]]), size_average=False).data[0])
 
+
+import pandas as pd
+
+df = pd.read_csv("G:/preds.csv", header=0)
+
+df['real_class'] = df['real_class'].astype('int')
+df['pred_class'] = df['pred_class'].astype('int')
+
+df['equal'] = df['real_class'] == df['pred_class']
+
+acc_by_cls = df.groupby(['real_class'])['equal'].mean().reset_index()
+acc_by_cls.columns=['class', 'acc']
+
+print(acc_by_cls)
 import tensorflow as tf
+import numpy as np
 
-targets = tf.constant([[[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
-                       [[[11, 12], [13, 14]], [[15, 16], [17, 18]]]])
+mask = np.array([[True, False, True], [False, True, True]])
+
+
+
+targets = tf.constant([[[[1, 2], [3, 4]], [[5, 6], [7, 8]], [[115, 116], [117, 118]]],
+                       [[[11, 12], [13, 14]], [[15, 16], [17, 18]], [[25, 26], [27, 28]]]])
+
+a = tf.boolean_mask(targets, mask)  # [[1, 2], [5, 6]]
+
+sess = tf.Session()
+
+with sess.as_default():
+    print(a.eval())
+
 
 pred_outputs = tf.zeros_like(targets)
 

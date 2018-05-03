@@ -24,7 +24,7 @@ import config
 
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',
+    'data_dir', '../Datasets/tfrecords',
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')

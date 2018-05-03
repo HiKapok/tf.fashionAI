@@ -44,7 +44,7 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',#'/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',
+    'data_dir', '../Datasets/tfrecords',#'/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')
@@ -268,7 +268,11 @@ def keypoint_model_fn(features, labels, mode, params):
     #                             weights=1.0 / tf.cast(cur_batch_size, tf.float32),
     #                             name='last_pred_mse')
 
-    sq_diff = tf.reduce_sum(tf.squared_difference(targets, score_map), axis=-1)
+    all_visible = tf.logical_and(key_v>0, isvalid>0)
+    targets = tf.boolean_mask(targets, all_visible)
+    pred_outputs = [tf.boolean_mask(pred_outputs[ind], all_visible, name='boolean_mask_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+
+    sq_diff = tf.reduce_sum(tf.squared_difference(targets, pred_outputs[-1]), axis=-1)
     last_pred_mse = tf.metrics.mean_absolute_error(sq_diff, tf.zeros_like(sq_diff), name='last_pred_mse')
 
     metrics = {'normalized_error': ne_mertric, 'last_pred_mse':last_pred_mse}

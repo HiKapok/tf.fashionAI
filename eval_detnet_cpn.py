@@ -44,12 +44,12 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords_test',
+    'data_dir', '../Datasets/tfrecords_test',
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_cpn_blur/',
+    'model_dir', './logs_detnet_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -59,10 +59,10 @@ tf.app.flags.DEFINE_integer(
     'The frequency with which summaries are saved, in seconds.')
 # model related configuration
 tf.app.flags.DEFINE_integer(
-    'train_image_size', 320,
+    'train_image_size', 384,
     'The size of the input image for the model to use.')
 tf.app.flags.DEFINE_integer(
-    'heatmap_size', 160,
+    'heatmap_size', 96,
     'The size of the output heatmap of the model.')
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,

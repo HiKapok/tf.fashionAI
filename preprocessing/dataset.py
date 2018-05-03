@@ -20,7 +20,7 @@ import tensorflow as tf
 
 import os
 
-import sys ; sys.path.insert(0, "/media/rs/0E06CD1706CD0127/Kapok/Chi/Codes")
+import sys; sys.path.insert(0, ".")
 import config
 
 slim = tf.contrib.slim

@@ -44,12 +44,12 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords_test',
+    'data_dir', '../Datasets/tfrecords_test',
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_8_256/',
+    'model_dir', './logs_hg/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -59,16 +59,16 @@ tf.app.flags.DEFINE_integer(
     'The frequency with which summaries are saved, in seconds.')
 # model related configuration
 tf.app.flags.DEFINE_integer(
-    'train_image_size', 256,
+    'train_image_size', 384,
     'The size of the input image for the model to use.')
 tf.app.flags.DEFINE_integer(
-    'heatmap_size', 64,
+    'heatmap_size', 96,
     'The size of the output heatmap of the model.')
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,
     'The sigma of Gaussian which generate the target heatmap.')
 tf.app.flags.DEFINE_integer('feats_channals', 256, 'Number of features in the hourglass.')
-tf.app.flags.DEFINE_integer('num_stacks', 8, 'Number of hourglasses to stack.')#8
+tf.app.flags.DEFINE_integer('num_stacks', 4, 'Number of hourglasses to stack.')#8
 tf.app.flags.DEFINE_integer('num_modules', 1, 'Number of residual modules at each location in the hourglass.')
 tf.app.flags.DEFINE_float(
     'bbox_border', 25.,

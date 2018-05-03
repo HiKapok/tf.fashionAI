@@ -44,12 +44,12 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',#'/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',
+    'data_dir', '../Datasets/tfrecords',#'/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords',
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_cpn_blur_temp/',
+    'model_dir', './logs_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -62,10 +62,10 @@ tf.app.flags.DEFINE_integer(
     'The frequency with which the model is saved, in seconds.')
 # model related configuration
 tf.app.flags.DEFINE_integer(
-    'train_image_size', 320,
+    'train_image_size', 384,
     'The size of the input image for the model to use.')
 tf.app.flags.DEFINE_integer(
-    'heatmap_size', 160,
+    'heatmap_size', 96,
     'The size of the output heatmap of the model.')
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,
@@ -80,7 +80,7 @@ tf.app.flags.DEFINE_integer(
     'epochs_per_eval', 20,
     'The number of training epochs to run between evaluations.')
 tf.app.flags.DEFINE_integer(
-    'batch_size', 10,
+    'batch_size', 12,
     'Batch size for training and evaluation.')
 tf.app.flags.DEFINE_boolean(
     'use_ohkm', True,
@@ -101,7 +101,7 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     'momentum', 0.9,
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
-tf.app.flags.DEFINE_float('learning_rate', 2e-5, 'Initial learning rate.')#1e-3
+tf.app.flags.DEFINE_float('learning_rate', 1e-4, 'Initial learning rate.')#1e-3
 tf.app.flags.DEFINE_float(
     'end_learning_rate', 0.000001,
     'The minimal end learning rate used by a polynomial decay learning rate.')
@@ -120,7 +120,7 @@ tf.app.flags.DEFINE_string(
     'The values of learning_rate decay factor for each segment between boundaries (comma-separated list).')
 # checkpoint related configuration
 tf.app.flags.DEFINE_string(
-    'checkpoint_path', '/media/rs/0E06CD1706CD0127/Kapok/Chi/Codes/model/resnet50',
+    'checkpoint_path', './model/resnet50',
     'The path to a checkpoint from which to fine-tune.')
 tf.app.flags.DEFINE_string(
     'checkpoint_model_scope', '',
@@ -311,16 +311,25 @@ def keypoint_model_fn(features, labels, mode, params):
     # last_pred_mse = tf.metrics.mean_squared_error(score_map, targets,
     #                             weights=1.0 / tf.cast(cur_batch_size, tf.float32),
     #                             name='last_pred_mse')
+    # filter all invisible keypoint maybe better for this task
+    # all_visible = tf.logical_and(key_v>0, isvalid>0)
+    # targets_list = [tf.boolean_mask(targets_list[ind], all_visible) for ind in list(range(len(targets_list)))]
+    # pred_outputs = [tf.boolean_mask(pred_outputs[ind], all_visible, name='boolean_mask_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+    all_visible = tf.expand_dims(tf.expand_dims(tf.cast(tf.logical_and(key_v>0, isvalid>0), tf.float32), axis=-1), axis=-1)
+    targets_list = [targets_list[ind] * all_visible for ind in list(range(len(targets_list)))]
+    pred_outputs = [pred_outputs[ind] * all_visible for ind in list(range(len(pred_outputs)))]
 
-    sq_diff = tf.reduce_sum(tf.squared_difference(targets, score_map), axis=-1)
+    sq_diff = tf.reduce_sum(tf.squared_difference(targets, pred_outputs[-1]), axis=-1)
     last_pred_mse = tf.metrics.mean_absolute_error(sq_diff, tf.zeros_like(sq_diff), name='last_pred_mse')
 
     metrics = {'normalized_error': ne_mertric, 'last_pred_mse':last_pred_mse}
     predictions = {'normalized_error': ne_mertric[1]}
     ne_mertric = tf.identity(ne_mertric[1], name='ne_mertric')
 
+    base_learning_rate = params['learning_rate']
     mse_loss_list = []
     if params['use_ohkm']:
+        base_learning_rate = 1. * base_learning_rate
         for pred_ind in list(range(len(pred_outputs) - 1)):
             mse_loss_list.append(0.5 * tf.losses.mean_squared_error(targets_list[pred_ind], pred_outputs[pred_ind],
                                 weights=1.0 / tf.cast(cur_batch_size, tf.float32),
@@ -378,7 +387,7 @@ def keypoint_model_fn(features, labels, mode, params):
     if mode == tf.estimator.ModeKeys.TRAIN:
         global_step = tf.train.get_or_create_global_step()
 
-        lr_values = [params['warmup_learning_rate']] + [params['learning_rate'] * decay for decay in params['lr_decay_factors']]
+        lr_values = [params['warmup_learning_rate']] + [base_learning_rate * decay for decay in params['lr_decay_factors']]
         learning_rate = tf.train.piecewise_constant(tf.cast(global_step, tf.int32),
                                                     [params['warmup_steps']] + [int(float(ep)*params['steps_per_epoch']) for ep in params['decay_boundaries']],
                                                     lr_values)
@@ -550,9 +559,9 @@ def main(_):
             'blouse': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
                 'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 36',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'blouse',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
@@ -562,9 +571,9 @@ def main(_):
             'dress': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
                 'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 36',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'dress',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
@@ -574,9 +583,9 @@ def main(_):
             'outwear': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
                 'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 36',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'outwear',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
@@ -586,9 +595,9 @@ def main(_):
             'skirt': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
                 'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 36',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'skirt',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
@@ -598,9 +607,9 @@ def main(_):
             'trousers': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
                 'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'epochs_per_eval': 15,
                 'lr_decay_factors': '1, 0.5, 0.1',
-                'decay_boundaries': '20, 36',
+                'decay_boundaries': '10, 20',
                 'model_scope': 'trousers',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',

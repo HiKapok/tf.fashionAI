@@ -151,7 +151,7 @@ keymap_factory = {'blouse': config.blouse_keymap,
                  'skirt': config.skirt_keymap,
                  'trousers': config.trousers_keymap}
 
-def convert_train(output_dir, val_per=0.05):
+def convert_train(output_dir, val_per=0.015, all_splits=config.SPLITS):
     class_hist = {'blouse': 0,
                  'dress': 0,
                  'outwear': 0,
@@ -178,7 +178,7 @@ def convert_train(output_dir, val_per=0.05):
         val_tfrecord_writer = tf.python_io.TFRecordWriter(tf_val_filename)
         this_key_map = keymap_factory[cat]
 
-        for split in config.SPLITS:
+        for split in all_splits:
             if 'test' in split: continue
             sys.stdout.write('\nprocessing split: {}...\n'.format(split))
             sys.stdout.flush()
@@ -300,11 +300,26 @@ def convert_test(output_dir, splits=config.SPLITS):
     print(class_hist, total_examples)
     return class_hist, total_examples
 
-if __name__ == '__main__':
-    # {'blouse': 10155, 'outwear': 7734, 'dress': 7224, 'skirt': 9910, 'trousers': 9142} 44165
-    #convert_train('/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords')
-    #{'trousers': 1958, 'outwear': 2043, 'skirt': 1980, 'blouse': 1977, 'dress': 2038} 9996
-    #convert_test('/media/rs/0E06CD1706CD0127/Kapok/Chi/Datasets/tfrecords_test', ['test_b'])
+def count_split_examples(split_path, file_pattern=''):
+    # Count the total number of examples in all of these shard
+    num_samples = 0
+    tfrecords_to_count = [os.path.join(split_path, file) for file in os.listdir(split_path) if file_pattern in file]
+    opts = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.ZLIB)
+    for tfrecord_file in tfrecords_to_count:
+        for record in tf.python_io.tf_record_iterator(tfrecord_file):#, options = opts):
+            num_samples += 1
+            #print(num_samples)
+    return num_samples
 
+if __name__ == '__main__':
+    # convert_train('../Datasets/tfrecords_warm', val_per=0., all_splits=['train_0'])
+    convert_train(config.RECORDS_DATA_DIR)
+    convert_test(config.TEST_RECORDS_DATA_DIR)
+    print('blouse', count_split_examples(config.RECORDS_DATA_DIR, file_pattern='blouse_0000_val')
+    , 'outwear', count_split_examples(config.RECORDS_DATA_DIR, file_pattern='outwear_0000_val')
+    , 'dress', count_split_examples(config.RECORDS_DATA_DIR, file_pattern='dress_0000_val')
+    , 'skirt', count_split_examples(config.RECORDS_DATA_DIR, file_pattern='skirt_0000_val')
+    , 'trousers', count_split_examples(config.RECORDS_DATA_DIR, file_pattern='trousers_0000_val')
+    , 'all', count_split_examples(config.RECORDS_DATA_DIR, file_pattern='val'))
     # test_dataset()
 
