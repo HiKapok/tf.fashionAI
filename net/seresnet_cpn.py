@@ -205,6 +205,9 @@ def constant_xavier_initializer(shape, group, dtype=tf.float32, uniform=True):
       trunc_stddev = math.sqrt(1.3 * 1.0 / n)
       return tf.truncated_normal(shape, 0.0, trunc_stddev, dtype, seed=None)
 
+def wrapper_initlizer(shape, dtype=None, partition_info=None):
+    return constant_xavier_initializer(shape, 32, dtype)
+
 # for root block, use dummy input_filters, e.g. 128 rather than 64 for the first block
 def se_next_bottleneck_block(inputs, input_filters, name_prefix, is_training, group, data_format='channels_last', need_reduce=True, is_root=False, reduced_scale=16):
     bn_axis = -1 if data_format == 'channels_last' else 1
@@ -236,13 +239,19 @@ def se_next_bottleneck_block(inputs, input_filters, name_prefix, is_training, gr
     if data_format == 'channels_first':
         reduced_inputs_relu = tf.pad(reduced_inputs_relu, paddings = [[0, 0], [0, 0], [1, 1], [1, 1]])
         weight_shape = [3, 3, reduced_inputs_relu.get_shape().as_list()[1]//group, input_filters // 2]
-        weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
+        if is_training:
+            weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
+        else:
+            weight_ = tf.get_variable(name_prefix + '_3x3/kernel', shape=weight_shape, initializer=wrapper_initlizer, trainable=is_training)
         weight_groups = tf.split(weight_, num_or_size_splits=group, axis=-1, name=name_prefix + '_weight_split')
         xs = tf.split(reduced_inputs_relu, num_or_size_splits=group, axis=1, name=name_prefix + '_inputs_split')
     else:
         reduced_inputs_relu = tf.pad(reduced_inputs_relu, paddings = [[0, 0], [1, 1], [1, 1], [0, 0]])
         weight_shape = [3, 3, reduced_inputs_relu.get_shape().as_list()[-1]//group, input_filters // 2]
-        weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
+        if is_training:
+            weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
+        else:
+            weight_ = tf.get_variable(name_prefix + '_3x3/kernel', shape=weight_shape, initializer=wrapper_initlizer, trainable=is_training)
         weight_groups = tf.split(weight_, num_or_size_splits=group, axis=-1, name=name_prefix + '_weight_split')
         xs = tf.split(reduced_inputs_relu, num_or_size_splits=group, axis=-1, name=name_prefix + '_inputs_split')
 
@@ -516,13 +525,19 @@ def global_net_sext_bottleneck_block(inputs, input_filters, is_training, data_fo
         if data_format == 'channels_first':
             reduced_inputs_relu = tf.pad(reduced_inputs_relu, paddings = [[0, 0], [0, 0], [1, 1], [1, 1]])
             weight_shape = [3, 3, reduced_inputs_relu.get_shape().as_list()[1]//group, input_filters]
-            weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
+            if is_training:
+                weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
+            else:
+                weight_ = tf.get_variable(name_prefix + '_3x3/kernel', shape=weight_shape, initializer=wrapper_initlizer, trainable=is_training)
             weight_groups = tf.split(weight_, num_or_size_splits=group, axis=-1, name=name_prefix + '_weight_split')
             xs = tf.split(reduced_inputs_relu, num_or_size_splits=group, axis=1, name=name_prefix + '_inputs_split')
         else:
             reduced_inputs_relu = tf.pad(reduced_inputs_relu, paddings = [[0, 0], [1, 1], [1, 1], [0, 0]])
             weight_shape = [3, 3, reduced_inputs_relu.get_shape().as_list()[-1]//group, input_filters]
-            weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
+            if is_training:
+                weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
+            else:
+                weight_ = tf.get_variable(name_prefix + '_3x3/kernel', shape=weight_shape, initializer=wrapper_initlizer, trainable=is_training)
             weight_groups = tf.split(weight_, num_or_size_splits=group, axis=-1, name=name_prefix + '_weight_split')
             xs = tf.split(reduced_inputs_relu, num_or_size_splits=group, axis=-1, name=name_prefix + '_inputs_split')
 

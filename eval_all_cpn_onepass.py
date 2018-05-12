@@ -48,7 +48,7 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '../Datasets/tfrecords_test',#tfrecords_test tfrecords_test_stage1_b
+    'data_dir', '../Datasets/tfrecords_test_stage1_b',#tfrecords_test tfrecords_test_stage1_b
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
@@ -274,7 +274,6 @@ def keypoint_model_fn(features, labels, mode, params):
         pred_x_first_stage = tf.where(dist < 1e-3, pred_x_first_stage1, pred_x_first_stage1 + (pred_x_first_stage2 - pred_x_first_stage1) * 0.25 / dist)
         pred_y_first_stage = tf.where(dist < 1e-3, pred_y_first_stage1, pred_y_first_stage1 + (pred_y_first_stage2 - pred_y_first_stage1) * 0.25 / dist)
 
-
     xmin = tf.cast(tf.reduce_min(pred_x_first_stage), tf.int64)
     xmax = tf.cast(tf.reduce_max(pred_x_first_stage), tf.int64)
     ymin = tf.cast(tf.reduce_min(pred_y_first_stage), tf.int64)
@@ -351,7 +350,8 @@ def keypoint_model_fn(features, labels, mode, params):
 
             pred_x = tf.where(dist < 1e-3, pred_x_first_stage1, pred_x_first_stage1 + (pred_x_first_stage2 - pred_x_first_stage1) * 0.25 / dist)
             pred_y = tf.where(dist < 1e-3, pred_y_first_stage1, pred_y_first_stage1 + (pred_y_first_stage2 - pred_y_first_stage1) * 0.25 / dist)
-
+    # for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):#TRAINABLE_VARIABLES):
+    #   print(var.op.name)
 
     predictions = {'pred_x': pred_x + offsets[0], 'pred_y': pred_y + offsets[1], 'file_name': file_name}
 

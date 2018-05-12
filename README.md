@@ -13,6 +13,15 @@ The main goal of this competition is to detect the keypoints of the clothes' ima
 ![](demos/outline.jpg "The Keypoints for Each Category")
 
 All the codes was writen by myself and tested under TensorFlow 1.6, Python 3.5, Ubuntu 16.04. I tried to use the latest possible TensorFlow's best practice paradigm, like [tf.estimator](https://www.tensorflow.org/api_docs/python/tf/estimator) and [tf.layers](https://www.tensorflow.org/api_docs/python/tf/layers). Almost none py_func was used in my codes to maximize the performance. Augumentations like flip, rotate, random crop, color distort were used to reduce overfit. The current performance of the model is ~0.4% in Normalized Error and got to ~20th-place in the second stage of the competition. 
+
+There are still other ways to further improve the performance but I didn't try those in this competition because of their limitations in applications, for example:
+
+- More large input image size
+- More deeper backbone networks
+- Locate clothes first by detection networks
+- Multi-scale supervision for Stacked Hourglass Models
+- Extra-regressor to refine the location of keypoints
+- Multi-crop ensemble for single image predictions
    
 If you find it's useful to your research or competitions, any contribution or star to this repo is welcomed.
 
