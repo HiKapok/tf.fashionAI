@@ -151,7 +151,7 @@ keymap_factory = {'blouse': config.blouse_keymap,
                  'skirt': config.skirt_keymap,
                  'trousers': config.trousers_keymap}
 
-def convert_train(output_dir, val_per=0.015, all_splits=config.SPLITS):
+def convert_train(output_dir, val_per=0.015, all_splits=config.SPLITS, file_idx_start=0):
     class_hist = {'blouse': 0,
                  'dress': 0,
                  'outwear': 0,
@@ -169,7 +169,7 @@ def convert_train(output_dir, val_per=0.015, all_splits=config.SPLITS):
         # TODO: create tfrecorder writer here
         sys.stdout.write('\nprocessing category: {}...'.format(cat))
         sys.stdout.flush()
-        file_idx = 0#start_file_idx[cat]
+        file_idx = file_idx_start#start_file_idx[cat]
         record_idx = 0
         tf_filename = os.path.join(output_dir, '%s_%04d.tfrecord' % (cat, file_idx))
         tfrecord_writer = tf.python_io.TFRecordWriter(tf_filename)
@@ -312,8 +312,12 @@ def count_split_examples(split_path, file_pattern=''):
     return num_samples
 
 if __name__ == '__main__':
-    # convert_train('../Datasets/tfrecords_warm', val_per=0., all_splits=['train_0'])
-    convert_train(config.RECORDS_DATA_DIR)
+    np.random.seed(RANDOM_SEED)
+    #convert_test('../Datasets/tfrecords_test_stage1_b', splits=['test_stage1_b'])
+    os.mkdir(config.RECORDS_DATA_DIR)
+    convert_train(config.RECORDS_DATA_DIR, val_per=0.)
+    convert_train(config.RECORDS_DATA_DIR, val_per=0., all_splits=config.WARM_UP_SPLITS, file_idx_start=1000)
+    os.mkdir(config.TEST_RECORDS_DATA_DIR)
     convert_test(config.TEST_RECORDS_DATA_DIR)
     print('blouse', count_split_examples(config.RECORDS_DATA_DIR, file_pattern='blouse_0000_val')
     , 'outwear', count_split_examples(config.RECORDS_DATA_DIR, file_pattern='outwear_0000_val')

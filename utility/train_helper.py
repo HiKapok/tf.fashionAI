@@ -170,6 +170,92 @@ def get_init_fn_for_scaffold_(checkpoint_path, model_dir, checkpoint_exclude_sco
         tf.logging.warning('No Variables to restore')
         return None
 
+
+def get_raw_init_fn_for_scaffold(checkpoint_path, model_dir, use_v1=False):
+    flags_checkpoint_path = checkpoint_path
+    # Warn the user if a checkpoint exists in the model_dir. Then ignore.
+    if tf.train.latest_checkpoint(model_dir):
+        tf.logging.info('Ignoring --checkpoint_path because a checkpoint already exists in %s' % model_dir)
+        return None
+    if flags_checkpoint_path is None:
+        return None
+    variables_to_restore = []
+    for var in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
+        variables_to_restore.append(var)
+
+    if tf.gfile.IsDirectory(flags_checkpoint_path):
+        checkpoint_path = tf.train.latest_checkpoint(flags_checkpoint_path)
+    else:
+        checkpoint_path = flags_checkpoint_path
+
+    tf.logging.info('Fine-tuning from %s. Ignoring missing vars: %s' % (checkpoint_path, True))
+
+    if not variables_to_restore:
+        raise ValueError('variables_to_restore cannot be empty')
+
+    reader = tf.train.NewCheckpointReader(checkpoint_path)
+    if isinstance(variables_to_restore, dict):
+        var_dict = variables_to_restore
+    else:
+        var_dict = {var.op.name: var for var in variables_to_restore}
+    available_vars = {}
+    for var in var_dict:
+        if reader.has_tensor(var):
+            available_vars[var] = var_dict[var]
+        else:
+            tf.logging.warning('Variable %s missing in checkpoint %s', var, checkpoint_path)
+    variables_to_restore = available_vars
+    if variables_to_restore:
+        saver = tf.train.Saver(variables_to_restore, reshape=False, write_version=tf.train.SaverDef.V1 if use_v1 else tf.train.SaverDef.V2)
+        saver.build()
+        def callback(scaffold, session):
+            saver.restore(session, checkpoint_path)
+        return callback
+    else:
+        tf.logging.warning('No Variables to restore')
+        return None
+
+def swa_get_init_fn_for_scaffold(checkpoint_path, model_dir, variables_to_restore, ema, use_v1=False):
+    flags_checkpoint_path = checkpoint_path
+    # Warn the user if a checkpoint exists in the model_dir. Then ignore.
+    if tf.train.latest_checkpoint(model_dir):
+        tf.logging.info('Ignoring --checkpoint_path because a checkpoint already exists in %s' % model_dir)
+        return None
+    if flags_checkpoint_path is None:
+        return None
+
+    if tf.gfile.IsDirectory(flags_checkpoint_path):
+        checkpoint_path = tf.train.latest_checkpoint(flags_checkpoint_path)
+    else:
+        checkpoint_path = flags_checkpoint_path
+
+    tf.logging.info('Fine-tuning from %s. Ignoring missing vars: %s' % (checkpoint_path, True))
+
+    if not variables_to_restore:
+        raise ValueError('variables_to_restore cannot be empty')
+
+    reader = tf.train.NewCheckpointReader(checkpoint_path)
+    if isinstance(variables_to_restore, dict):
+        var_dict = variables_to_restore
+    else:
+        var_dict = {var.op.name: var for var in variables_to_restore}
+    available_vars = {}
+    for var in var_dict:
+        if reader.has_tensor(var):
+            available_vars[ema.average_name(var_dict[var])] = var_dict[var]
+        else:
+            tf.logging.warning('Variable %s missing in checkpoint %s', var, checkpoint_path)
+    variables_to_restore = available_vars
+    if variables_to_restore:
+        saver = tf.train.Saver(variables_to_restore, reshape=False, write_version=tf.train.SaverDef.V1 if use_v1 else tf.train.SaverDef.V2)
+        saver.build()
+        def callback(scaffold, session):
+            saver.restore(session, checkpoint_path)
+        return callback
+    else:
+        tf.logging.warning('No Variables to restore')
+        return None
+
 def get_latest_checkpoint_for_evaluate_(checkpoint_path, model_dir):
     flags_checkpoint_path = checkpoint_path
     # Warn the user if a checkpoint exists in the model_dir. Then ignore.

@@ -388,6 +388,7 @@ def parse_comma_list(args):
     return [float(s.strip()) for s in args.split(',')]
 
 def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_per_eval, lr_decay_factors, decay_boundaries, checkpoint_path=None, checkpoint_exclude_scopes='', checkpoint_model_scope='', ignore_missing_vars=True):
+    steps_per_epoch = config.split_size[(model_scope if 'all' not in model_scope else '*')]['train'] // FLAGS.batch_size
     fashionAI = tf.estimator.Estimator(
         model_fn=model_fn, model_dir=model_dir, config=run_config,
         params={
@@ -403,7 +404,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
             'num_stacks': FLAGS.num_stacks,
             'num_modules': FLAGS.num_modules,
             'data_format': FLAGS.data_format,
-            'steps_per_epoch': config.split_size[(model_scope if 'all' not in model_scope else '*')]['train'] // FLAGS.batch_size,
+            'steps_per_epoch': steps_per_epoch,
             'batch_size': FLAGS.batch_size,
             'use_ohkm': FLAGS.use_ohkm,
             'weight_decay': FLAGS.weight_decay,
@@ -430,7 +431,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
         logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: '{}:'.format(model_scope) + (', '.join(['%s=%.6f' % (k, v) for k, v in dicts.items()])))
 
         tf.logging.info('Starting a training cycle.')
-        fashionAI.train(input_fn=lambda : input_pipeline(True, model_scope, epochs_per_eval), hooks=[logging_hook])
+        fashionAI.train(input_fn=lambda : input_pipeline(True, model_scope, epochs_per_eval), hooks=[logging_hook], max_steps=(steps_per_epoch*train_epochs))
 
         tf.logging.info('Starting to evaluate.')
         eval_results = fashionAI.evaluate(input_fn=lambda : input_pipeline(False, model_scope, 1))

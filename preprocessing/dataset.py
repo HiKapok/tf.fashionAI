@@ -110,7 +110,7 @@ def slim_get_split(dataset_dir, image_preprocessing_fn, batch_size, num_readers,
     return batch_input
 
 
-def slim_test_get_split(dataset_dir, image_preprocessing_fn, num_readers, num_preprocessing_threads, category='blouse', file_pattern='{}_*.tfrecord', reader=None):
+def slim_test_get_split(dataset_dir, image_preprocessing_fn, num_readers, num_preprocessing_threads, category='blouse', file_pattern='{}_*.tfrecord', reader=None, dynamic_pad=False):
     # Allowing None in the signature so that dataset_factory can use the default.
     if reader is None:
         reader = tf.TFRecordReader
@@ -160,10 +160,14 @@ def slim_test_get_split(dataset_dir, image_preprocessing_fn, num_readers, num_pr
     [org_image, height, width, channels, classid, filename] = provider.get(['image', 'height', 'width', 'channels', 'classid', 'filename'])
 
     shape = tf.stack([height, width, channels], axis=0)
-    image = image_preprocessing_fn(org_image, shape)
+    if image_preprocessing_fn is not None:
+        image, shape, offsets = image_preprocessing_fn(org_image, filename, shape)
+    else:
+        image = org_image
+        offsets = tf.constant([0, 0], tf.int64)
 
-    batch_input = tf.train.batch([image, shape, filename, classid],
-                                dynamic_pad = False,
+    batch_input = tf.train.batch([image, shape, filename, classid, offsets],
+                                dynamic_pad = dynamic_pad,
                                 batch_size = 1,
                                 allow_smaller_final_batch=True,
                                 num_threads = num_preprocessing_threads,

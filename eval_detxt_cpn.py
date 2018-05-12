@@ -23,7 +23,7 @@ import pandas as pd
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
-from net import hourglass as hg
+from net import detxt_cpn as cpn
 from utility import train_helper
 
 from preprocessing import preprocessing
@@ -44,12 +44,12 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '../Datasets/tfrecords_test',# tfrecords_test_stage1_b tfrecords_test
+    'data_dir', '../Datasets/tfrecords_test',#tfrecords_test tfrecords_test_stage1_b
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_hg/',
+    'model_dir', './logs_detxt_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -67,9 +67,6 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,
     'The sigma of Gaussian which generate the target heatmap.')
-tf.app.flags.DEFINE_integer('feats_channals', 256, 'Number of features in the hourglass.')
-tf.app.flags.DEFINE_integer('num_stacks', 4, 'Number of hourglasses to stack.')#8
-tf.app.flags.DEFINE_integer('num_modules', 1, 'Number of residual modules at each location in the hourglass.')
 tf.app.flags.DEFINE_float(
     'bbox_border', 25.,
     'The nearest distance of the crop border to al keypoints.')
@@ -80,7 +77,7 @@ tf.app.flags.DEFINE_string(
     'with CPU. If left unspecified, the data format will be chosen '
     'automatically based on whether TensorFlow was built for CPU or GPU.')
 tf.app.flags.DEFINE_integer(
-    'tf_random_seed', 20180406, 'Random seed for TensorFlow initializers.')
+    'tf_random_seed', 20180417, 'Random seed for TensorFlow initializers.')
 # checkpoint related configuration
 tf.app.flags.DEFINE_string(
     'checkpoint_path', None,
@@ -93,7 +90,7 @@ tf.app.flags.DEFINE_boolean(
     'Wether we will average predictions of left-right fliped image.')
 tf.app.flags.DEFINE_string(
     #'blouse', 'dress', 'outwear', 'skirt', 'trousers', 'all'
-    'model_scope', 'all',
+    'model_scope', 'blouse',
     'Model scope name used to replace the name_scope in checkpoint.')
 tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
@@ -148,8 +145,9 @@ def preprocessing_fn(org_image, file_name, shape):
 
   #lnorm_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(config.global_norm_key, dtype=tf.int64), tf.constant(config.global_norm_lvalues, dtype=tf.int64)), 0)
   return preprocessing.preprocess_for_test(org_image, file_name, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size, pred_df=pd_df)
+
 def input_pipeline(model_scope=FLAGS.model_scope):
-    #preprocessing_fn = lambda org_image, shape: preprocessing.preprocess_for_test(org_image, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
+    # preprocessing_fn = lambda org_image, shape: preprocessing.preprocess_for_test(org_image, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
 
     images, shape, file_name, classid, offsets = dataset.slim_test_get_split(FLAGS.data_dir, preprocessing_fn, FLAGS.num_readers, FLAGS.num_preprocessing_threads, file_pattern=FLAGS.dataset_name, category=(model_scope if 'all' not in model_scope else '*'), reader=None)
 
@@ -213,13 +211,13 @@ def gaussian_blur(inputs, inputs_filters, sigma, data_format, name=None):
 
 def get_keypoint(image, predictions, heatmap_size, height, width, category, clip_at_zero=True, data_format='channels_last', name=None):
     # expand_border = 10
-
     # pad_pred = tf.pad(predictions, tf.constant([[0, 0], [0, 0], [expand_border, expand_border], [expand_border, expand_border]]),
     #               mode='CONSTANT', name='pred_padding', constant_values=0)
 
     # blur_pred = gaussian_blur(pad_pred, config.class_num_joints[category], 3.5, 'channels_first', 'pred_blur')
 
     # predictions = tf.slice(blur_pred, [0, 0, expand_border, expand_border], [1, config.class_num_joints[category], heatmap_size, heatmap_size])
+
     predictions = tf.reshape(predictions, [1, -1, heatmap_size*heatmap_size])
 
     pred_max = tf.reduce_max(predictions, axis=-1)
@@ -318,9 +316,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
     if not params['flip_on_test']:
         with tf.variable_scope(params['model_scope'], default_name=None, values=[features], reuse=tf.AUTO_REUSE):
-            pred_outputs = hg.create_model(features, params['num_stacks'], params['feats_channals'],
-                                config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['num_modules'],
-                                (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
+            pred_outputs = cpn.cascaded_pyramid_net(features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
         if params['data_format'] == 'channels_last':
             pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
     else:
@@ -332,9 +328,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
         num_joints = config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')]
         with tf.variable_scope(params['model_scope'], default_name=None, values=[double_features], reuse=tf.AUTO_REUSE):
-            pred_outputs = hg.create_model(double_features, params['num_stacks'], params['feats_channals'],
-                                num_joints, params['num_modules'],
-                                (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
+            pred_outputs = cpn.cascaded_pyramid_net(double_features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
 
         if params['data_format'] == 'channels_last':
             pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
@@ -350,7 +344,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
         def cond_flip(heatmap_ind):
             return tf.cond(heatmap_ind[1] < 1, lambda : heatmap_ind[0], lambda : tf.transpose(tf.image.flip_left_right(tf.transpose(heatmap_ind[0], [1, 2, 0], name='pred_nchw2nhwc')), [2, 0, 1], name='pred_nhwc2nchw'))
-        # all the heatmap of the fliped image should also be fliped back, a little complicated
+        # all the heatmap of the fliped image should also be fliped back
         pred_outputs = [tf.map_fn(cond_flip, [pred_outputs[ind], tf.tile(tf.reshape(tf.range(2), [-1]), [tf.shape(features)[0]])], dtype=tf.float32, parallel_iterations=10, back_prop=True, swap_memory=False, infer_shape=True, name='map_fn_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
         # average predictions of left_reight_fliped image
         segment_indices = tf.reshape(tf.tile(tf.reshape(tf.range(tf.shape(features)[0]), [-1, 1]), [1, 2]), [-1])
@@ -377,9 +371,6 @@ def eval_each(model_fn, model_dir, model_scope, run_config):
         params={
             'train_image_size': FLAGS.train_image_size,
             'heatmap_size': FLAGS.heatmap_size,
-            'feats_channals': FLAGS.feats_channals,
-            'num_stacks': FLAGS.num_stacks,
-            'num_modules': FLAGS.num_modules,
             'data_format': FLAGS.data_format,
             'model_scope': model_scope,
             'flip_on_test': FLAGS.flip_on_test,

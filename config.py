@@ -22,7 +22,8 @@ RECORDS_DATA_DIR = '../Datasets/tfrecords'
 TEST_RECORDS_DATA_DIR = '../Datasets/tfrecords_test'
 
 CATEGORIES = ['blouse', 'dress', 'outwear', 'skirt', 'trousers']
-SPLITS = ['test_0', 'train_0', 'train_1', 'train_2', 'train_3']#'train_0',
+SPLITS = ['test_0', 'train_1', 'train_2', 'train_3']#'train_0',
+WARM_UP_SPLITS = ['train_0']
 
 DEBUG_DIR = '../Debug'
 EVAL_DEBUG_DIR = '../Eval_Debug'
@@ -36,6 +37,14 @@ ind2category = dict(zip(list(range(len(CATEGORIES))), sorted(CATEGORIES)))
 
 
 #armpit_left|armpit_right; waistband_left,waistband_right--trousers, skirt）
+normalize_point_name = {
+    'blouse': ('armpit_left', 'armpit_right'),
+    'outwear': ('armpit_left', 'armpit_right'),
+    'trousers': ('waistband_left', 'waistband_right'),
+    'skirt': ('waistband_left', 'waistband_right'),
+    'dress': ('armpit_left', 'armpit_right')
+}
+
 normalize_point_ind = {
     'blouse': ([5, 6], [6, 7]),
     'outwear': ([4, 5], [6, 7]),
@@ -286,67 +295,35 @@ left_right_group_map = {
 # warm-up {'trousers': 2795, 'dress': 2312, 'skirt': 2292, 'outwear': 2138, 'blouse': 2997} 12534
 # val blouse 182 outwear 152 dress 137 skirt 186 trousers 160 all 817
 # test_a {'outwear': 2508, 'blouse': 2586, 'trousers': 2631, 'skirt': 2683, 'dress': 2693} 13101
+
+# new round 2
+# {'trousers': 10251, 'skirt': 11649, 'blouse': 11109, 'dress': 9002, 'outwear': 9586} 51597
+# warm-up {'trousers': 2795, 'skirt': 2292, 'blouse': 2997, 'dress': 2312, 'outwear': 2138} 12534
+# test_a {'trousers': 2631, 'skirt': 2683, 'blouse': 2586, 'dress': 2693, 'outwear': 2508} 13101
 split_size = {
-            '*': {'train': 51597+12534-817,
-                'val': 817,
+            '*': {'train': 51597+12534,
+                'val': 0,
                 'test': 13101,
-                'test_b': 9970},
-            'blouse': {'train': 11109+2997-182,
-                'val': 182,
+                'test_a': 9970},
+            'blouse': {'train': 11109+2997,
+                'val': 0,
                 'test': 2586,
-                'test_b': 1974},
-            'dress': {'train': 9002+2312-137,
-                'val': 137,
+                'test_a': 1974},
+            'dress': {'train': 9002+2312,
+                'val': 0,
                 'test': 2693,
-                'test_b': 2052},
-            'outwear': {'train': 9586+2138-152,
-                'val': 152,
+                'test_a': 2052},
+            'outwear': {'train': 9586+2138,
+                'val': 0,
                 'test': 2508,
-                'test_b': 1947},
-            'skirt': {'train': 11649+2292-186,
-                'val': 186,
+                'test_a': 1947},
+            'skirt': {'train': 11649+2292,
+                'val': 0,
                 'test': 2683,
-                'test_b': 2051},
-            'trousers': {'train': 10251+2795-160,
-                'val': 160,
+                'test_a': 2051},
+            'trousers': {'train': 10251+2795,
+                'val': 0,
                 'test': 2631,
-                'test_b': 1946},
+                'test_a': 1946},
             }
-
-# split_size = {
-#             '*': {'train': 16,
-#                 'val': 16,
-#                 'test': 9996},
-#             'blouse': {'train': 16,
-#                 'val': 16,
-#                 'test': 1977},
-#             'dress': {'train': 16,
-#                 'val': 16,
-#                 'test': 2038},
-#             'outwear': {'train': 16,
-#                 'val': 16,
-#                 'test': 2043},
-#             'skirt': {'train': 16,
-#                 'val': 16,
-#                 'test': 1980},
-#             'trousers': {'train': 16,
-#                 'val': 16,
-#                 'test': 1958},
-#             }
-# print(blouse_keymap)
-# print(inverse_blouse_keymap)
-# print(outwear_keymap)
-# print(inverse_outwear_keymap)
-# print(trousers_keymap)
-# print(inverse_trousers_keymap)
-# print(skirt_keymap)
-# print(inverse_skirt_keymap)
-# print(dress_keymap)
-# print(inverse_dress_keymap)
-# print(key2ind)
-# print(inverse_key2ind)
-
-
-# Keypoints of each Category
-
 

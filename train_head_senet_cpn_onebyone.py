@@ -22,7 +22,7 @@ import numpy as np
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
-from net import cpn as cpn
+from net import seresnet_cpn as cpn
 from utility import train_helper
 from utility import mertric
 
@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_cpn/',
+    'model_dir', './logs_head_sext_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -81,6 +81,9 @@ tf.app.flags.DEFINE_integer(
     'The number of training epochs to run between evaluations.')
 tf.app.flags.DEFINE_integer(
     'batch_size', 10,
+    'Batch size for training and evaluation.')
+tf.app.flags.DEFINE_integer(
+    'xt_batch_size', 10,
     'Batch size for training and evaluation.')
 tf.app.flags.DEFINE_boolean(
     'use_ohkm', True,
@@ -120,7 +123,7 @@ tf.app.flags.DEFINE_string(
     'The values of learning_rate decay factor for each segment between boundaries (comma-separated list).')
 # checkpoint related configuration
 tf.app.flags.DEFINE_string(
-    'checkpoint_path', './model/resnet50',
+    'checkpoint_path', './model',
     'The path to a checkpoint from which to fine-tune.')
 tf.app.flags.DEFINE_string(
     'checkpoint_model_scope', '',
@@ -138,9 +141,6 @@ tf.app.flags.DEFINE_boolean(
 tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
     'Wether we will train on cloud.')
-tf.app.flags.DEFINE_string(
-    'cloud_checkpoint_path', 'resnet50',
-    'The path to a checkpoint from which to fine-tune.')
 tf.app.flags.DEFINE_boolean(
     'seq_train', False,
     'Wether we will train a sequence model.')
@@ -272,9 +272,7 @@ def keypoint_model_fn(features, labels, mode, params):
     #features= tf.ones_like(features)
 
     with tf.variable_scope(params['model_scope'], default_name=None, values=[features], reuse=tf.AUTO_REUSE):
-        pred_outputs = cpn.cascaded_pyramid_net(features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
-
-    #print(pred_outputs)
+        pred_outputs = cpn.head_xt_cascaded_pyramid_net(features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
 
     if params['data_format'] == 'channels_last':
         pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
@@ -564,7 +562,7 @@ def main(_):
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'blouse',
-                'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
+                'checkpoint_path': os.path.join(FLAGS.data_dir, 'seresnext50') if FLAGS.run_on_cloud else os.path.join(FLAGS.checkpoint_path, 'seresnext50'),
                 'checkpoint_model_scope': '',
                 'checkpoint_exclude_scopes': 'blouse/feature_pyramid, blouse/global_net',
                 'ignore_missing_vars': True,
@@ -576,7 +574,7 @@ def main(_):
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'dress',
-                'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
+                'checkpoint_path': os.path.join(FLAGS.data_dir, 'seresnext50') if FLAGS.run_on_cloud else os.path.join(FLAGS.checkpoint_path, 'seresnext50'),
                 'checkpoint_model_scope': '',
                 'checkpoint_exclude_scopes': 'dress/feature_pyramid, dress/global_net',
                 'ignore_missing_vars': True,
@@ -588,7 +586,7 @@ def main(_):
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'outwear',
-                'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
+                'checkpoint_path': os.path.join(FLAGS.data_dir, 'seresnext50') if FLAGS.run_on_cloud else os.path.join(FLAGS.checkpoint_path, 'seresnext50'),
                 'checkpoint_model_scope': '',
                 'checkpoint_exclude_scopes': 'outwear/feature_pyramid, outwear/global_net',
                 'ignore_missing_vars': True,
@@ -600,7 +598,7 @@ def main(_):
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'skirt',
-                'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
+                'checkpoint_path': os.path.join(FLAGS.data_dir, 'seresnext50') if FLAGS.run_on_cloud else os.path.join(FLAGS.checkpoint_path, 'seresnext50'),
                 'checkpoint_model_scope': '',
                 'checkpoint_exclude_scopes': 'skirt/feature_pyramid, skirt/global_net',
                 'ignore_missing_vars': True,
@@ -612,7 +610,7 @@ def main(_):
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'trousers',
-                'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
+                'checkpoint_path': os.path.join(FLAGS.data_dir, 'seresnext50') if FLAGS.run_on_cloud else os.path.join(FLAGS.checkpoint_path, 'seresnext50'),
                 'checkpoint_model_scope': '',
                 'checkpoint_exclude_scopes': 'trousers/feature_pyramid, trousers/global_net',
                 'ignore_missing_vars': True,

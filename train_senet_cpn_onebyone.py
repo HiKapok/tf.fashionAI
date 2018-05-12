@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_se_cpn/',
+    'model_dir', './logs_sext_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -68,7 +68,7 @@ tf.app.flags.DEFINE_integer(
     'heatmap_size', 96,
     'The size of the output heatmap of the model.')
 tf.app.flags.DEFINE_string(
-    'backbone', 'seresnet50',#or seresnext50
+    'backbone', 'seresnext50',#or seresnext50 seresnet50
     'The backbone network to use for feature pyramid.')
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,
@@ -83,7 +83,7 @@ tf.app.flags.DEFINE_integer(
     'epochs_per_eval', 20,
     'The number of training epochs to run between evaluations.')
 tf.app.flags.DEFINE_integer(
-    'batch_size', 12,
+    'batch_size', 10,
     'Batch size for training and evaluation.')
 tf.app.flags.DEFINE_integer(
     'xt_batch_size', 10,
@@ -290,7 +290,7 @@ def keypoint_model_fn(features, labels, mode, params):
 
     # this is important!!!
     targets = 255. * targets
-    blur_list = [1., 1.5, 2., 3., None]
+    blur_list = [1., 1.37, 1.73, 2.4, None]#[1., 1.5, 2., 3., None]
     #blur_list = [None, None, None, None, None]
 
     targets_list = []
@@ -421,6 +421,7 @@ def parse_comma_list(args):
     return [float(s.strip()) for s in args.split(',')]
 
 def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_per_eval, lr_decay_factors, decay_boundaries, checkpoint_path=None, checkpoint_exclude_scopes='', checkpoint_model_scope='', ignore_missing_vars=True):
+    steps_per_epoch = config.split_size[(model_scope if 'all' not in model_scope else '*')]['train'] // (FLAGS.xt_batch_size if 'seresnext50' in FLAGS.backbone else FLAGS.batch_size)
     fashionAI = tf.estimator.Estimator(
         model_fn=model_fn, model_dir=model_dir, config=run_config,
         params={
@@ -433,7 +434,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
             'train_image_size': FLAGS.train_image_size,
             'heatmap_size': FLAGS.heatmap_size,
             'data_format': FLAGS.data_format,
-            'steps_per_epoch': config.split_size[(model_scope if 'all' not in model_scope else '*')]['train'] // (FLAGS.xt_batch_size if 'seresnext50' in FLAGS.backbone else FLAGS.batch_size),
+            'steps_per_epoch': steps_per_epoch,
             'use_ohkm': FLAGS.use_ohkm,
             'batch_size': (FLAGS.xt_batch_size if 'seresnext50' in FLAGS.backbone else FLAGS.batch_size),
             'weight_decay': FLAGS.weight_decay,
@@ -460,7 +461,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
         logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=FLAGS.log_every_n_steps, formatter=lambda dicts: '{}:'.format(model_scope) + (', '.join(['%s=%.6f' % (k, v) for k, v in dicts.items()])))
 
         tf.logging.info('Starting a training cycle.')
-        fashionAI.train(input_fn=lambda : input_pipeline(True, model_scope, epochs_per_eval), hooks=[logging_hook])
+        fashionAI.train(input_fn=lambda : input_pipeline(True, model_scope, epochs_per_eval), hooks=[logging_hook], max_steps=(steps_per_epoch*train_epochs))
 
         tf.logging.info('Starting to evaluate.')
         eval_results = fashionAI.evaluate(input_fn=lambda : input_pipeline(False, model_scope, 1))

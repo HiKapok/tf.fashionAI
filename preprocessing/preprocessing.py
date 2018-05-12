@@ -76,8 +76,60 @@ def apply_with_random_selector(x, func, num_cases):
       func(control_flow_ops.switch(x, tf.equal(sel, case))[1], case)
       for case in range(num_cases)])[0]
 
-
 def distort_color(image, color_ordering=0, fast_mode=True, scope=None):
+  """Distort the color of a Tensor image.
+
+  Each color distortion is non-commutative and thus ordering of the color ops
+  matters. Ideally we would randomly permute the ordering of the color ops.
+  Rather then adding that level of complication, we select a distinct ordering
+  of color ops for each preprocessing thread.
+
+  Args:
+    image: 3-D Tensor containing single image in [0, 1].
+    color_ordering: Python int, a type of distortion (valid values: 0-3).
+    fast_mode: Avoids slower ops (random_hue and random_contrast)
+    scope: Optional scope for name_scope.
+  Returns:
+    3-D Tensor color-distorted image on range [0, 1]
+  Raises:
+    ValueError: if color_ordering not in [0, 3]
+  """
+  with tf.name_scope(scope, 'distort_color', [image]):
+    if fast_mode:
+      if color_ordering == 0:
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+      else:
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+    else:
+      if color_ordering == 0:
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
+      elif color_ordering == 1:
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+        image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
+        image = tf.image.random_hue(image, max_delta=0.2)
+      elif color_ordering == 2:
+        image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
+        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+      elif color_ordering == 3:
+        image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
+        image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
+        image = tf.image.random_brightness(image, max_delta=32. / 255.)
+      else:
+        raise ValueError('color_ordering must be in [0, 3]')
+
+    # The random_* ops do not necessarily clamp.
+    return tf.clip_by_value(image, 0.0, 1.0)
+
+def distort_color_v0(image, color_ordering=0, fast_mode=True, scope=None):
   """Distort the color of a Tensor image.
 
   Each color distortion is non-commutative and thus ordering of the color ops
@@ -314,6 +366,13 @@ def _mean_image_subtraction(image, means):
     channels[i] -= means[i]
   return tf.concat(axis=2, values=channels)
 
+def unwhiten_image(image):
+  means=[_R_MEAN, _G_MEAN, _B_MEAN]
+  num_channels = image.get_shape().as_list()[-1]
+  channels = tf.split(axis=2, num_or_size_splits=num_channels, value=image)
+  for i in range(num_channels):
+    channels[i] += means[i]
+  return tf.concat(axis=2, values=channels)
 
 def _smallest_size_at_least(height, width, smallest_side):
   """Computes new shape with the smallest side equal to `smallest_side`.
@@ -469,6 +528,18 @@ if config.DEBUG:
       #   heatmap_to_save = heatmap_to_save.astype(np.uint8)
       #   file_name = '{}_{}.jpg'.format(save_image_with_heatmap.counter, num_pt)
       #   imsave(os.path.join(config.DEBUG_DIR, file_name), heatmap_to_save)
+      return save_image_with_heatmap.counter
+  def _save_image(image):
+      if not hasattr(save_image_with_heatmap, "counter"):
+          save_image_with_heatmap.counter = 0  # it doesn't exist yet, so initialize it
+      save_image_with_heatmap.counter += 1
+
+      img_to_save = np.array(image.tolist())
+
+      img_to_save = img_to_save.astype(np.uint8)
+      file_name = 'raw_{}.jpg'.format(save_image_with_heatmap.counter)
+      imsave(os.path.join(config.DEBUG_DIR, file_name), img_to_save)
+
       return save_image_with_heatmap.counter
 
 def np_draw_labelmap(pt, heatmap_sigma, heatmap_size, type='Gaussian'):
@@ -697,9 +768,149 @@ def preprocess_for_train(image,
                          bbox_border, heatmap_sigma, heatmap_size,
                          resize_side_min=_RESIZE_SIDE_MIN,
                          resize_side_max=_RESIZE_SIDE_MAX,
-                         fast_mode=True,
+                         fast_mode=False,
                          scope=None,
                          add_image_summaries=True):
+  """Preprocesses the given image for training.
+
+  Note that the actual resizing scale is sampled from
+    [`resize_size_min`, `resize_size_max`].
+
+  Args:
+    image: A `Tensor` representing an image of arbitrary size.
+    output_height: The height of the image after preprocessing.
+    output_width: The width of the image after preprocessing.
+    resize_side_min: The lower bound for the smallest side of the image for
+      aspect-preserving resizing.
+    resize_side_max: The upper bound for the smallest side of the image for
+      aspect-preserving resizing.
+
+  Returns:
+    A preprocessed image.
+  """
+  with tf.name_scope(scope, 'vgg_distort_image', [image, output_height, output_width]):
+    orig_dtype = image.dtype
+    if orig_dtype != tf.float32:
+      image = tf.image.convert_image_dtype(image, dtype=tf.float32)
+
+    # Randomly distort the colors. There are 1 or 4 ways to do it.
+    num_distort_cases = 1 if fast_mode else 4
+    distorted_image = apply_with_random_selector(image,
+                                              lambda x, ordering: distort_color(x, ordering, fast_mode),
+                                              num_cases=num_distort_cases)
+    distorted_image = tf.to_float(tf.image.convert_image_dtype(distorted_image, orig_dtype, saturate=True))
+    if add_image_summaries:
+      tf.summary.image('color_distorted_image', tf.cast(tf.expand_dims(distorted_image, 0), tf.uint8))
+
+    normarlized_image = _mean_image_subtraction(distorted_image, [_R_MEAN, _G_MEAN, _B_MEAN])
+
+    fkey_x, fkey_y = tf.cast(key_x, tf.float32), tf.cast(key_y, tf.float32)
+    #print(fkey_x, fkey_y)
+    # rotate transform, with bbox contains the clothes region
+    image, fkey_x, fkey_y, bbox = rotate_augum(normarlized_image, shape, fkey_x, fkey_y, bbox_border)
+
+    distorted_image, distorted_bbox = distorted_bounding_box_crop(image, bbox)
+    #distorted_image, distorted_bbox = image, tf.reshape(tf.stack([0., 0., 1., 1.], axis=-1), [1, 1, 4])
+
+    distorted_bbox = tf.squeeze(distorted_bbox)
+    fkey_x = fkey_x - distorted_bbox[1]# * tf.cast(x_mask, tf.float32)
+    fkey_y = fkey_y - distorted_bbox[0]# * tf.cast(y_mask, tf.float32)
+
+    outside_x = (fkey_x >= distorted_bbox[3])
+    outside_y = (fkey_y >= distorted_bbox[2])
+
+    fkey_x = fkey_x - tf.cast(outside_x, tf.float32)
+    fkey_y = fkey_y - tf.cast(outside_y, tf.float32)
+
+    fkey_x = fkey_x / (distorted_bbox[3] - distorted_bbox[1])
+    fkey_y = fkey_y / (distorted_bbox[2] - distorted_bbox[0])
+
+    # Restore the shape since the dynamic slice based upon the bbox_size loses
+    # the third dimension.
+    distorted_image.set_shape([None, None, 3])
+
+    if add_image_summaries:
+      tf.summary.image('cropped_image', tf.expand_dims(distorted_image, 0))
+
+    # We select only 1 case for fast_mode bilinear.
+    num_resize_cases = 1 if fast_mode else 4
+    distorted_image = apply_with_random_selector(
+        distorted_image,
+        lambda x, method: tf.image.resize_images(x, [output_height, output_width], method),
+        num_cases=num_resize_cases)
+    distorted_image.set_shape([output_height, output_width, 3])
+    #fkey_x = tf.Print(fkey_x,[fkey_x,fkey_y])
+    #print(heatmap_size)
+    #fkey_x = tf.Print(fkey_x,[fkey_x])
+    #fkey_y = tf.Print(fkey_y,[fkey_y])
+    ikey_x = tf.cast(tf.round(fkey_x * heatmap_size), tf.int64)
+    ikey_y = tf.cast(tf.round(fkey_y * heatmap_size), tf.int64)
+
+    gather_ind = config.left_right_remap[category]
+
+    if add_image_summaries:
+      tf.summary.image('cropped_resized_image', tf.expand_dims(distorted_image, 0))
+
+    # when do flip_left_right we should also swap the left and right keypoint
+    distorted_image, new_key_x, new_key_y, new_key_v = tf.cond(tf.random_uniform([1], minval=0., maxval=1., dtype=tf.float32)[0] < 0.5, lambda: (tf.image.flip_left_right(distorted_image), heatmap_size - tf.gather(ikey_x, gather_ind), tf.gather(ikey_y, gather_ind), tf.gather(key_v, gather_ind)), lambda: (distorted_image, ikey_x, ikey_y, key_v))
+
+    # new_key_x = tf.Print(new_key_x,[new_key_x])
+    # new_key_y = tf.Print(new_key_y,[new_key_y])
+    #new_key_x = tf.Print(new_key_x,[tf.shape(new_key_x)])
+    targets, isvalid = draw_labelmap(new_key_x, new_key_y, heatmap_sigma, heatmap_size)
+    #norm_gather_ind_ = config.normalize_point_ind_by_id[classid]
+
+    norm_gather_ind = tf.stack([norm_table[0].lookup(classid), norm_table[1].lookup(classid)], axis=-1)
+
+    scale_x_ = tf.cast(output_width, tf.float32)/tf.cast(shape[1], tf.float32)
+    scale_y_ = tf.cast(output_height, tf.float32)/tf.cast(shape[0], tf.float32)
+    scale_x = tf.cast(output_width, tf.float32)/tf.cast(heatmap_size, tf.float32)
+    scale_y = tf.cast(output_height, tf.float32)/tf.cast(heatmap_size, tf.float32)
+    # if the two point used for calculate norm factor missing, then we use original point
+    norm_x, norm_y = tf.cond(tf.reduce_sum(tf.gather(isvalid, norm_gather_ind)) < 2,
+                        lambda: (tf.cast(tf.gather(key_x, norm_gather_ind), tf.float32) * scale_x_,
+                                tf.cast(tf.gather(key_y, norm_gather_ind), tf.float32) * scale_y_),
+                        lambda:(tf.cast(tf.gather(new_key_x, norm_gather_ind), tf.float32) * scale_x,
+                                tf.cast(tf.gather(new_key_y, norm_gather_ind), tf.float32) * scale_y))
+
+    norm_x, norm_y = tf.squeeze(norm_x), tf.squeeze(norm_y)
+
+    norm_value = tf.pow(tf.pow(norm_x[0] - norm_x[1], 2.) + tf.pow(norm_y[0] - norm_y[1], 2.), .5)
+    #targets = draw_labelmap(new_key_x, new_key_y) * tf.expand_dims(tf.expand_dims(tf.cast(tf.clip_by_value(new_key_v, 0, 1), tf.float32), -1), -1)
+
+    if config.DEBUG:
+      save_image_op = tf.py_func(save_image_with_heatmap,
+                                  [unwhiten_image(distorted_image), targets,
+                                  config.left_right_group_map[category][0],
+                                  config.left_right_group_map[category][1],
+                                  config.left_right_group_map[category][2],
+                                  [output_height, output_width],
+                                  heatmap_size],
+                                  tf.int64, stateful=True)
+      with tf.control_dependencies([save_image_op]):
+        distorted_image = distorted_image/255.
+    else:
+      distorted_image = distorted_image/255.
+    if data_format == 'NCHW':
+      distorted_image = tf.transpose(distorted_image, perm=(2, 0, 1))
+
+    return distorted_image, targets, new_key_v, isvalid, norm_value
+
+
+def preprocess_for_train_v0(image,
+                           classid,
+                           shape,
+                           output_height,
+                           output_width,
+                           key_x, key_y, key_v, norm_table,
+                           data_format,
+                           category,
+                           bbox_border, heatmap_sigma, heatmap_size,
+                           resize_side_min=_RESIZE_SIDE_MIN,
+                           resize_side_max=_RESIZE_SIDE_MAX,
+                           fast_mode=True,
+                           scope=None,
+                           add_image_summaries=True):
   """Preprocesses the given image for training.
 
   Note that the actual resizing scale is sampled from
@@ -773,7 +984,7 @@ def preprocess_for_train(image,
     # Randomly distort the colors. There are 1 or 4 ways to do it.
     num_distort_cases = 1 if fast_mode else 4
     distorted_image = apply_with_random_selector(distorted_image,
-                                              lambda x, ordering: distort_color(x, ordering, fast_mode),
+                                              lambda x, ordering: distort_color_v0(x, ordering, fast_mode),
                                               num_cases=num_distort_cases)
 
     if add_image_summaries:
@@ -820,7 +1031,6 @@ def preprocess_for_train(image,
       normarlized_image = tf.transpose(normarlized_image, perm=(2, 0, 1))
 
     return normarlized_image/255., targets, new_key_v, isvalid, norm_value
-
 
 def preprocess_for_eval(image, classid, shape, output_height, output_width, key_x, key_y, key_v, norm_table, data_format, category, bbox_border, heatmap_sigma, heatmap_size, resize_side, scope=None):
   """Preprocesses the given image for evaluation.
@@ -877,7 +1087,7 @@ def preprocess_for_eval(image, classid, shape, output_height, output_width, key_
     return normarlized_image/255., targets, key_v, isvalid, norm_value
 
 
-def preprocess_for_test(image, shape, output_height, output_width, data_format='NCHW', bbox_border=25., heatmap_sigma=1., heatmap_size=64, scope=None):
+def preprocess_for_test_v0(image, shape, output_height, output_width, data_format='NCHW', bbox_border=25., heatmap_sigma=1., heatmap_size=64, scope=None):
   """Preprocesses the given image for evaluation.
 
   Args:
@@ -902,6 +1112,95 @@ def preprocess_for_test(image, shape, output_height, output_width, data_format='
     if data_format == 'NCHW':
       normarlized_image = tf.transpose(normarlized_image, perm=(2, 0, 1))
     return normarlized_image/255.
+
+def preprocess_for_test(image, file_name, shape, output_height, output_width, data_format='NCHW', bbox_border=25., heatmap_sigma=1., heatmap_size=64, pred_df=None, scope=None):
+  """Preprocesses the given image for evaluation.
+
+  Args:
+    image: A `Tensor` representing an image of arbitrary size.
+    output_height: The height of the image after preprocessing.
+    output_width: The width of the image after preprocessing.
+
+  Returns:
+    A preprocessed image.
+  """
+  with tf.name_scope(scope, 'vgg_test_image', [image, output_height, output_width]):
+    # Crop the central region of the image with an area containing 87.5% of
+    # the original image.
+
+    if pred_df is not None:
+      xmin, ymin, xmax, ymax  = [table_.lookup(file_name) for table_ in pred_df]
+      #xmin, ymin, xmax, ymax = [tf.to_float(b) for b in bbox_cord]
+      #xmin = tf.Print(xmin, [file_name, xmin, ymin, xmax, ymax], summarize=500)
+      height, width, channals = tf.unstack(shape, axis=0)
+      xmin, ymin, xmax, ymax = xmin - 100, ymin - 80, xmax + 100, ymax + 80
+
+      xmin, ymin, xmax, ymax = tf.clip_by_value(xmin, 0, width[0]-1), tf.clip_by_value(ymin, 0, height[0]-1), \
+                              tf.clip_by_value(xmax, 0, width[0]-1), tf.clip_by_value(ymax, 0, height[0]-1)
+
+      bbox_h = ymax - ymin
+      bbox_w = xmax - xmin
+      areas = bbox_h * bbox_w
+
+      offsets=tf.stack([xmin, ymin], axis=0)
+      crop_shape = tf.stack([bbox_h, bbox_w, channals[0]], axis=0)
+
+      ymin, xmin, bbox_h, bbox_w = tf.cast(ymin, tf.int32), tf.cast(xmin, tf.int32), tf.cast(bbox_h, tf.int32), tf.cast(bbox_w, tf.int32)
+      crop_image = tf.image.crop_to_bounding_box(image, ymin, xmin, bbox_h, bbox_w)
+
+      image, shape, offsets = tf.cond(areas > 0, lambda : (crop_image, crop_shape, offsets),
+                                      lambda : (image, shape, tf.constant([0, 0], tf.int64)))
+      offsets.set_shape([2])
+      shape.set_shape([3])
+    else:
+      offsets = tf.constant([0, 0], tf.int64)
+
+    image = tf.expand_dims(image, 0)
+    image = tf.image.resize_bilinear(image, [output_height, output_width], align_corners=False)
+    image = tf.squeeze(image, [0])
+    image.set_shape([output_height, output_width, 3])
+
+    if config.DEBUG:
+      save_image_op = tf.py_func(_save_image,
+                                  [image],
+                                  tf.int64, stateful=True)
+      image = tf.Print(image, [save_image_op])
+
+    image = tf.to_float(image)
+    normarlized_image = _mean_image_subtraction(image, [_R_MEAN, _G_MEAN, _B_MEAN])
+    if data_format == 'NCHW':
+      normarlized_image = tf.transpose(normarlized_image, perm=(2, 0, 1))
+    return normarlized_image/255., shape, offsets
+
+def preprocess_for_test_raw_output(image, output_height, output_width, data_format='NCHW', scope=None):
+  """Preprocesses the given image for evaluation.
+
+  Args:
+    image: A `Tensor` representing an image of arbitrary size.
+    output_height: The height of the image after preprocessing.
+    output_width: The width of the image after preprocessing.
+
+  Returns:
+    A preprocessed image.
+  """
+  with tf.name_scope(scope, 'vgg_test_image_raw_output', [image, output_height, output_width]):
+    # Crop the central region of the image with an area containing 87.5% of
+    # the original image.
+    image = tf.image.resize_bilinear(image, [output_height, output_width], align_corners=False)
+    image = tf.squeeze(image, [0])
+    image.set_shape([output_height, output_width, 3])
+
+    if config.DEBUG:
+      save_image_op = tf.py_func(_save_image,
+                                  [image],
+                                  tf.int64, stateful=True)
+      image = tf.Print(image, [save_image_op])
+
+    image = tf.to_float(image)
+    normarlized_image = _mean_image_subtraction(image, [_R_MEAN, _G_MEAN, _B_MEAN])
+    if data_format == 'NCHW':
+      normarlized_image = tf.transpose(normarlized_image, perm=(2, 0, 1))
+    return tf.expand_dims(normarlized_image/255., 0)
 
 def preprocess_image(image, classid, shape, output_height, output_width,
                     key_x, key_y, key_v, norm_table,

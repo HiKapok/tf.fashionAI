@@ -22,7 +22,7 @@ import numpy as np
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
-from net import cpn as cpn
+from net import detxt_cpn as cpn
 from utility import train_helper
 from utility import mertric
 
@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_????', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_cpn/',
+    'model_dir', './logs_detxt_cpn/',
     'The parent directory where the model will be stored.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
@@ -120,7 +120,7 @@ tf.app.flags.DEFINE_string(
     'The values of learning_rate decay factor for each segment between boundaries (comma-separated list).')
 # checkpoint related configuration
 tf.app.flags.DEFINE_string(
-    'checkpoint_path', './model/resnet50',
+    'checkpoint_path', './model/seresnext50',
     'The path to a checkpoint from which to fine-tune.')
 tf.app.flags.DEFINE_string(
     'checkpoint_model_scope', '',
@@ -139,7 +139,7 @@ tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
     'Wether we will train on cloud.')
 tf.app.flags.DEFINE_string(
-    'cloud_checkpoint_path', 'resnet50',
+    'cloud_checkpoint_path', 'seresnext50',
     'The path to a checkpoint from which to fine-tune.')
 tf.app.flags.DEFINE_boolean(
     'seq_train', False,
@@ -503,7 +503,7 @@ def main(_):
                 'model_scope': 'blouse',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'blouse/feature_pyramid/conv_heatmap, blouse/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'blouse/additional_layer, blouse/feature_pyramid/conv_heatmap, blouse/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
             'dress': {
@@ -515,7 +515,7 @@ def main(_):
                 'model_scope': 'dress',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'dress/feature_pyramid/conv_heatmap, dress/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'dress/additional_layer, dress/feature_pyramid/conv_heatmap, dress/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
             'outwear': {
@@ -527,7 +527,7 @@ def main(_):
                 'model_scope': 'outwear',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'outwear/feature_pyramid/conv_heatmap, outwear/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'outwear/additional_layer, outwear/feature_pyramid/conv_heatmap, outwear/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
             'skirt': {
@@ -539,7 +539,7 @@ def main(_):
                 'model_scope': 'skirt',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'skirt/feature_pyramid/conv_heatmap, skirt/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'skirt/additional_layer, skirt/feature_pyramid/conv_heatmap, skirt/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
             'trousers': {
@@ -551,7 +551,7 @@ def main(_):
                 'model_scope': 'trousers',
                 'checkpoint_path': os.path.join(FLAGS.model_dir, 'all'),
                 'checkpoint_model_scope': 'all',
-                'checkpoint_exclude_scopes': 'trousers/feature_pyramid/conv_heatmap, trousers/global_net/conv_heatmap',
+                'checkpoint_exclude_scopes': 'trousers/additional_layer, trousers/feature_pyramid/conv_heatmap, trousers/global_net/conv_heatmap',
                 'ignore_missing_vars': True,
             },
         }
@@ -560,61 +560,61 @@ def main(_):
             'blouse': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
                 'train_epochs': 40,
-                'epochs_per_eval': 15,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'blouse',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'blouse/feature_pyramid, blouse/global_net',
+                'checkpoint_exclude_scopes': 'blouse/additional_layer, blouse/feature_pyramid, blouse/global_net',
                 'ignore_missing_vars': True,
             },
             'dress': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
                 'train_epochs': 40,
-                'epochs_per_eval': 15,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'dress',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'dress/feature_pyramid, dress/global_net',
+                'checkpoint_exclude_scopes': 'dress/additional_layer, dress/feature_pyramid, dress/global_net',
                 'ignore_missing_vars': True,
             },
             'outwear': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
                 'train_epochs': 40,
-                'epochs_per_eval': 15,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'outwear',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'outwear/feature_pyramid, outwear/global_net',
+                'checkpoint_exclude_scopes': 'outwear/additional_layer, outwear/feature_pyramid, outwear/global_net',
                 'ignore_missing_vars': True,
             },
             'skirt': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
                 'train_epochs': 40,
-                'epochs_per_eval': 15,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'skirt',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'skirt/feature_pyramid, skirt/global_net',
+                'checkpoint_exclude_scopes': 'skirt/additional_layer, skirt/feature_pyramid, skirt/global_net',
                 'ignore_missing_vars': True,
             },
             'trousers': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
                 'train_epochs': 40,
-                'epochs_per_eval': 15,
+                'epochs_per_eval': 16,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'trousers',
                 'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path) if FLAGS.run_on_cloud else FLAGS.checkpoint_path,
                 'checkpoint_model_scope': '',
-                'checkpoint_exclude_scopes': 'trousers/feature_pyramid, trousers/global_net',
+                'checkpoint_exclude_scopes': 'trousers/additional_layer, trousers/feature_pyramid, trousers/global_net',
                 'ignore_missing_vars': True,
             },
         }
