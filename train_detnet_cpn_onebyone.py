@@ -633,3 +633,11 @@ def main(_):
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)
   tf.app.run()
+
+
+# 0.04623710017640076
+# blouse: 0.04324096205446997
+# dress: 0.04344861161278246
+# outwear: 0.04659189066954178
+# skirt: 0.05859064040038493
+# trousers: 0.049271125570990434

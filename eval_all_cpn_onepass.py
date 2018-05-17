@@ -48,7 +48,7 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '../Datasets/tfrecords_test_stage1_b',#tfrecords_test tfrecords_test_stage1_b
+    'data_dir', '../Datasets/tfrecords_test',#tfrecords_test tfrecords_test_stage1_b
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
@@ -112,6 +112,10 @@ all_models = {
   'seresnet50_cpn': {'backbone': seresnet_cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_se_cpn'},
   'seresnext50_cpn': {'backbone': seresnet_cpn.xt_cascaded_pyramid_net, 'logs_sub_dir': 'logs_sext_cpn'},
   'detnext50_cpn': {'backbone': detxt_cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_detxt_cpn'},
+  'large_seresnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : seresnet_cpn.xt_cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=50),
+                        'logs_sub_dir': 'logs_large_sext_cpn'},
+  'large_detnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : detxt_cpn.cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=50),
+                        'logs_sub_dir': 'logs_large_detxt_cpn'},
   'head_seresnext50_cpn': {'backbone': seresnet_cpn.head_xt_cascaded_pyramid_net, 'logs_sub_dir': 'logs_head_sext_cpn'},
 }
 

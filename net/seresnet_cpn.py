@@ -304,7 +304,7 @@ def se_next_bottleneck_block(inputs, input_filters, name_prefix, is_training, gr
     #return tf.nn.relu(residuals + prob_outputs * increase_inputs_bn, name=name_prefix + '/relu')
 
 # the input image should in BGR order, note that this is not the common case in Tensorflow
-def sext_cpn_backbone(input_image, istraining, data_format, group=32):
+def sext_cpn_backbone(input_image, istraining, data_format, net_depth=50, group=32):
     bn_axis = -1 if data_format == 'channels_last' else 1
 
     if data_format == 'channels_last':
@@ -315,8 +315,11 @@ def sext_cpn_backbone(input_image, istraining, data_format, group=32):
         swaped_input_image = tf.stack([image_channels[2], image_channels[1], image_channels[0]], axis=1)
     #swaped_input_image = input_image
 
+    if net_depth not in [50, 101]:
+        raise TypeError('Only ResNeXt50 or ResNeXt101 is supprted now.')
+
     input_depth = [256, 512, 1024, 2048] # the input depth of the the first block is dummy input
-    num_units = [3, 4, 6, 3]
+    num_units = [3, 4, 6, 3] if net_depth==50 else [3, 4, 23, 3]
     block_name_prefix = ['conv2_{}', 'conv3_{}', 'conv4_{}', 'conv5_{}']
 
     if data_format == 'channels_first':
@@ -661,9 +664,9 @@ def cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data
 
     return pyramid_heatmaps + [outputs]
 
-def xt_cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format):
+def xt_cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=50):
     #with tf.variable_scope('resnet50', 'resnet50', values=[inputs]):
-    end_points = sext_cpn_backbone(inputs, istraining, data_format)
+    end_points = sext_cpn_backbone(inputs, istraining, data_format, net_depth=net_depth)
     pyramid_len = len(end_points)
     up_sampling = None
     pyramid_heatmaps = []

@@ -147,7 +147,7 @@ tf.app.flags.DEFINE_boolean(
 tf.app.flags.DEFINE_boolean(
     'seq_train', False,
     'Wether we will train a sequence model.')
-tf.app.flags.DEFINE_string(
+tf.app.flags.DEFINE_string(#
     'model_to_train', 'blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
     'The sub-model to train (comma-separated list).')
 
@@ -638,3 +638,11 @@ def main(_):
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)
   tf.app.run()
+
+# 0.04473711425469029
+# blouse: 0.042138283111307795
+# dress: 0.04147867224643174
+# outwear: 0.04511445541161763
+# skirt: 0.05388678376709799
+# trousers: 0.04985801318493035
+

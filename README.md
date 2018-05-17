@@ -16,12 +16,12 @@ All the codes was writen by myself and tested under TensorFlow 1.6, Python 3.5, 
 
 There are still other ways to further improve the performance but I didn't try those in this competition because of their limitations in applications, for example:
 
-- More large input image size
+- More larger input image size
 - More deeper backbone networks
 - Locate clothes first by detection networks
 - Multi-scale supervision for Stacked Hourglass Models
 - Extra-regressor to refine the location of keypoints
-- Multi-crop ensemble for single image predictions
+- Multi-crop or multi-scale ensemble for single image predictions
    
 If you find it's useful to your research or competitions, any contribution or star to this repo is welcomed.
 
