@@ -44,7 +44,7 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '../Datasets/tfrecords_test',# tfrecords_test_stage1_b tfrecords_test
+    'data_dir', '../Datasets/tfrecords_test_stage1_b',# tfrecords_test_stage1_b tfrecords_test
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
@@ -85,9 +85,6 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_string(
     'checkpoint_path', None,
     'The path to a checkpoint from which to fine-tune.')
-tf.app.flags.DEFINE_string(
-    'coarse_pred_path', None,
-    'The path to a pred csv file from which to crop the input image for finer prediction.')
 tf.app.flags.DEFINE_boolean(
     'flip_on_test', False,
     'Wether we will average predictions of left-right fliped image.')
@@ -105,53 +102,11 @@ tf.app.flags.DEFINE_string(
 #--model_scope=blouse --checkpoint_path=./logs/blouse
 FLAGS = tf.app.flags.FLAGS
 
-def preprocessing_fn(org_image, file_name, shape):
-  pd_df = None
-  if FLAGS.coarse_pred_path is not None:
-    if tf.gfile.Exists(FLAGS.coarse_pred_path):
-      tf.logging.info('Finetuning Prediction From {}.'.format(FLAGS.coarse_pred_path))
-      tf.gfile.Copy(FLAGS.coarse_pred_path, './__coarse_pred.csv', overwrite=True)
-      pd_df = pd.read_csv('./__coarse_pred.csv', encoding='utf-8')
-
-      all_filenames = []
-      all_xmin = []
-      all_ymin = []
-      all_xmax = []
-      all_ymax = []
-
-      all_values = pd_df.values.tolist()
-      for records in all_values:
-        all_filenames.append(records[0].encode('utf8'))
-        xmin = 2000
-        ymin = 2000
-        xmax = -1
-        ymax = -1
-        for kp in records[2:]:
-          keypoint_info = kp.strip().split('_')
-          if int(keypoint_info[2]) == -1:
-            continue
-          xmin = min(xmin, int(keypoint_info[0]))
-          ymin = min(ymin, int(keypoint_info[1]))
-          xmax = max(xmax, int(keypoint_info[0]))
-          ymax = max(ymax, int(keypoint_info[1]))
-        all_xmin.append(xmin)
-        all_ymin.append(ymin)
-        all_xmax.append(xmax)
-        all_ymax.append(ymax)
-      #print(all_filenames, all_xmin, all_ymin, all_xmax, all_ymax)
-      xmin_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(all_filenames, dtype=tf.string), tf.constant(all_xmin, dtype=tf.int64)), -1)
-      ymin_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(all_filenames, dtype=tf.string), tf.constant(all_ymin, dtype=tf.int64)), -1)
-      xmax_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(all_filenames, dtype=tf.string), tf.constant(all_xmax, dtype=tf.int64)), -1)
-      ymax_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(all_filenames, dtype=tf.string), tf.constant(all_ymax, dtype=tf.int64)), -1)
-      pd_df = [xmin_table, ymin_table, xmax_table, ymax_table]
-  #pred_item['file_name'].encode('utf8')
-
-  #lnorm_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(config.global_norm_key, dtype=tf.int64), tf.constant(config.global_norm_lvalues, dtype=tf.int64)), 0)
-  return preprocessing.preprocess_for_test(org_image, file_name, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size, pred_df=pd_df)
 def input_pipeline(model_scope=FLAGS.model_scope):
     #preprocessing_fn = lambda org_image, shape: preprocessing.preprocess_for_test(org_image, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
+    preprocessing_fn = lambda org_image, file_name, shape: preprocessing.preprocess_for_test_raw_output(org_image, file_name, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
 
-    images, shape, file_name, classid, offsets = dataset.slim_test_get_split(FLAGS.data_dir, preprocessing_fn, FLAGS.num_readers, FLAGS.num_preprocessing_threads, file_pattern=FLAGS.dataset_name, category=(model_scope if 'all' not in model_scope else '*'), reader=None)
+    images, shape, file_name, classid, offsets = dataset.slim_test_get_split(FLAGS.data_dir, None, FLAGS.num_readers, FLAGS.num_preprocessing_threads, file_pattern=FLAGS.dataset_name, category=(model_scope if 'all' not in model_scope else '*'), reader=None, dynamic_pad=True)
 
     return {'images': images, 'shape': shape, 'classid': classid, 'file_name': file_name, 'pred_offsets': offsets}
 
@@ -316,49 +271,138 @@ def keypoint_model_fn(features, labels, mode, params):
 
     file_name = tf.identity(file_name, name='current_file')
 
+    image = preprocessing.preprocess_for_test_raw_output(features, params['train_image_size'], params['train_image_size'], data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), scope='first_stage')
+
     if not params['flip_on_test']:
-        with tf.variable_scope(params['model_scope'], default_name=None, values=[features], reuse=tf.AUTO_REUSE):
-            pred_outputs = hg.create_model(features, params['num_stacks'], params['feats_channals'],
+        with tf.variable_scope(params['model_scope'], default_name=None, values=[image], reuse=tf.AUTO_REUSE):
+            pred_outputs = hg.create_model(image, params['num_stacks'], params['feats_channals'],
                                 config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['num_modules'],
                                 (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
         if params['data_format'] == 'channels_last':
             pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+
+        pred_x_first_stage, pred_y_first_stage = get_keypoint(image, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
     else:
         # test augumentation on the fly
         if params['data_format'] == 'channels_last':
-            double_features = tf.reshape(tf.stack([features, tf.map_fn(tf.image.flip_left_right, features, back_prop=False)], axis = 1), [-1, params['train_image_size'], params['train_image_size'], 3])
+            double_features = tf.reshape(tf.stack([image, tf.map_fn(tf.image.flip_left_right, image, back_prop=False)], axis = 1), [-1, params['train_image_size'], params['train_image_size'], 3])
         else:
-            double_features = tf.reshape(tf.stack([features, tf.transpose(tf.map_fn(tf.image.flip_left_right, tf.transpose(features, [0, 2, 3, 1], name='nchw2nhwc'), back_prop=False), [0, 3, 1, 2], name='nhwc2nchw')], axis = 1), [-1, 3, params['train_image_size'], params['train_image_size']])
+            double_features = tf.reshape(tf.stack([image, tf.transpose(tf.map_fn(tf.image.flip_left_right, tf.transpose(image, [0, 2, 3, 1], name='nchw2nhwc'), back_prop=False), [0, 3, 1, 2], name='nhwc2nchw')], axis = 1), [-1, 3, params['train_image_size'], params['train_image_size']])
 
         num_joints = config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')]
         with tf.variable_scope(params['model_scope'], default_name=None, values=[double_features], reuse=tf.AUTO_REUSE):
             pred_outputs = hg.create_model(double_features, params['num_stacks'], params['feats_channals'],
-                                num_joints, params['num_modules'],
+                                config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['num_modules'],
                                 (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
 
         if params['data_format'] == 'channels_last':
             pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
-        # [[0, 0, 0, ..], [1, 1, 1, ...], ...]
-        row_indices = tf.tile(tf.reshape(tf.range(tf.shape(double_features)[0]), [-1, 1]), [1, num_joints])
-        # [[0, 1, 2, ...], [1, 0, 2, ...], [0, 1, 2], [1, 0, 2], ...]
-        col_indices = tf.reshape(tf.tile(tf.reshape(tf.stack([tf.range(num_joints), tf.constant(config.left_right_remap[(params['model_scope'] if 'all' not in params['model_scope'] else '*')])], axis=0), [-1]), [tf.shape(features)[0]]), [-1, num_joints])
-        # [[[0, 0], [0, 1], [0, 2], ...], [[1, 1], [1, 0], [1, 2], ...], [[2, 0], [2, 1], [2, 2], ...], ...]
+        row_indices = tf.tile(tf.reshape(tf.stack([tf.range(0, tf.shape(double_features)[0], delta=2), tf.range(1, tf.shape(double_features)[0], delta=2)], axis=0), [-1, 1]), [1, num_joints])
+        col_indices = tf.reshape(tf.tile(tf.reshape(tf.stack([tf.range(num_joints), tf.constant(config.left_right_remap[(params['model_scope'] if 'all' not in params['model_scope'] else '*')])], axis=0), [2, -1]), [1, tf.shape(features)[0]]), [-1, num_joints])
         flip_indices=tf.stack([row_indices, col_indices], axis=-1)
 
         #flip_indices = tf.Print(flip_indices, [flip_indices], summarize=500)
         pred_outputs = [tf.gather_nd(pred_outputs[ind], flip_indices, name='gather_nd_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
 
         def cond_flip(heatmap_ind):
-            return tf.cond(heatmap_ind[1] < 1, lambda : heatmap_ind[0], lambda : tf.transpose(tf.image.flip_left_right(tf.transpose(heatmap_ind[0], [1, 2, 0], name='pred_nchw2nhwc')), [2, 0, 1], name='pred_nhwc2nchw'))
-        # all the heatmap of the fliped image should also be fliped back, a little complicated
-        pred_outputs = [tf.map_fn(cond_flip, [pred_outputs[ind], tf.tile(tf.reshape(tf.range(2), [-1]), [tf.shape(features)[0]])], dtype=tf.float32, parallel_iterations=10, back_prop=True, swap_memory=False, infer_shape=True, name='map_fn_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
-        # average predictions of left_reight_fliped image
-        segment_indices = tf.reshape(tf.tile(tf.reshape(tf.range(tf.shape(features)[0]), [-1, 1]), [1, 2]), [-1])
-        pred_outputs = [tf.segment_mean(pred_outputs[ind], segment_indices, name='segment_mean_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+            return tf.cond(heatmap_ind[1] < tf.shape(features)[0], lambda : heatmap_ind[0], lambda : tf.transpose(tf.image.flip_left_right(tf.transpose(heatmap_ind[0], [1, 2, 0], name='pred_nchw2nhwc')), [2, 0, 1], name='pred_nhwc2nchw'))
+        # all the heatmap of the fliped image should also be fliped back
+        pred_outputs = [tf.map_fn(cond_flip, [pred_outputs[ind], tf.range(tf.shape(double_features)[0])], dtype=tf.float32, parallel_iterations=10, back_prop=True, swap_memory=False, infer_shape=True, name='map_fn_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+        pred_outputs = [tf.split(_, 2) for _ in pred_outputs]
+        pred_outputs_1 = [_[0] for _ in pred_outputs]
+        pred_outputs_2 = [_[1] for _ in pred_outputs]
+        pred_x_first_stage1, pred_y_first_stage1 = get_keypoint(image, pred_outputs_1[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+        pred_x_first_stage2, pred_y_first_stage2 = get_keypoint(image, pred_outputs_2[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
 
-    pred_x, pred_y = get_keypoint(features, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+        dist = tf.pow(tf.pow(pred_x_first_stage1 - pred_x_first_stage2, 2.) + tf.pow(pred_y_first_stage1 - pred_y_first_stage2, 2.), .5)
 
-    predictions = {'pred_x': pred_x + pred_offsets[:, 0], 'pred_y': pred_y + pred_offsets[:, 1], 'file_name': file_name}
+        pred_x_first_stage = tf.where(dist < 1e-3, pred_x_first_stage1, pred_x_first_stage1 + (pred_x_first_stage2 - pred_x_first_stage1) * 0.25 / dist)
+        pred_y_first_stage = tf.where(dist < 1e-3, pred_y_first_stage1, pred_y_first_stage1 + (pred_y_first_stage2 - pred_y_first_stage1) * 0.25 / dist)
+
+    xmin = tf.cast(tf.reduce_min(pred_x_first_stage), tf.int64)
+    xmax = tf.cast(tf.reduce_max(pred_x_first_stage), tf.int64)
+    ymin = tf.cast(tf.reduce_min(pred_y_first_stage), tf.int64)
+    ymax = tf.cast(tf.reduce_max(pred_y_first_stage), tf.int64)
+
+    xmin, ymin, xmax, ymax = xmin - 100, ymin - 80, xmax + 100, ymax + 80
+
+    xmin = tf.clip_by_value(xmin, 0, shape[0][1][0]-1)
+    ymin = tf.clip_by_value(ymin, 0, shape[0][0][0]-1)
+    xmax = tf.clip_by_value(xmax, 0, shape[0][1][0]-1)
+    ymax = tf.clip_by_value(ymax, 0, shape[0][0][0]-1)
+
+    bbox_h = ymax - ymin
+    bbox_w = xmax - xmin
+    areas = bbox_h * bbox_w
+
+    offsets=tf.stack([xmin, ymin], axis=0)
+    crop_shape = tf.stack([bbox_h, bbox_w, shape[0][2][0]], axis=0)
+
+    ymin, xmin, bbox_h, bbox_w = tf.cast(ymin, tf.int32), tf.cast(xmin, tf.int32), tf.cast(bbox_h, tf.int32), tf.cast(bbox_w, tf.int32)
+
+    single_image = tf.squeeze(features, [0])
+    crop_image = tf.image.crop_to_bounding_box(single_image, ymin, xmin, bbox_h, bbox_w)
+    crop_image = tf.expand_dims(crop_image, 0)
+
+    image, shape, offsets = tf.cond(areas > 0, lambda : (crop_image, crop_shape, offsets),
+                                    lambda : (features, shape, tf.constant([0, 0], tf.int64)))
+    offsets.set_shape([2])
+    offsets = tf.to_float(offsets)
+    shape = tf.reshape(shape, [1, 3])
+
+    image = preprocessing.preprocess_for_test_raw_output(image, params['train_image_size'], params['train_image_size'], data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), scope='second_stage')
+
+    if not params['flip_on_test']:
+        with tf.variable_scope(params['model_scope'], default_name=None, values=[image], reuse=True):
+            pred_outputs = hg.create_model(image, params['num_stacks'], params['feats_channals'],
+                                config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['num_modules'],
+                                (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
+        with tf.name_scope("refine_prediction"):
+            if params['data_format'] == 'channels_last':
+                pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+
+            pred_x, pred_y = get_keypoint(image, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+    else:
+        # test augumentation on the fly
+        with tf.name_scope("refine_prediction"):
+            if params['data_format'] == 'channels_last':
+                double_features = tf.reshape(tf.stack([image, tf.map_fn(tf.image.flip_left_right, image, back_prop=False)], axis = 1), [-1, params['train_image_size'], params['train_image_size'], 3])
+            else:
+                double_features = tf.reshape(tf.stack([image, tf.transpose(tf.map_fn(tf.image.flip_left_right, tf.transpose(image, [0, 2, 3, 1], name='nchw2nhwc'), back_prop=False), [0, 3, 1, 2], name='nhwc2nchw')], axis = 1), [-1, 3, params['train_image_size'], params['train_image_size']])
+
+        num_joints = config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')]
+        with tf.variable_scope(params['model_scope'], default_name=None, values=[double_features], reuse=True):
+            pred_outputs = hg.create_model(double_features, params['num_stacks'], params['feats_channals'],
+                                config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['num_modules'],
+                                (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
+        with tf.name_scope("refine_prediction"):
+            if params['data_format'] == 'channels_last':
+                pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+            row_indices = tf.tile(tf.reshape(tf.stack([tf.range(0, tf.shape(double_features)[0], delta=2), tf.range(1, tf.shape(double_features)[0], delta=2)], axis=0), [-1, 1]), [1, num_joints])
+            col_indices = tf.reshape(tf.tile(tf.reshape(tf.stack([tf.range(num_joints), tf.constant(config.left_right_remap[(params['model_scope'] if 'all' not in params['model_scope'] else '*')])], axis=0), [2, -1]), [1, tf.shape(features)[0]]), [-1, num_joints])
+            flip_indices=tf.stack([row_indices, col_indices], axis=-1)
+
+            #flip_indices = tf.Print(flip_indices, [flip_indices], summarize=500)
+            pred_outputs = [tf.gather_nd(pred_outputs[ind], flip_indices, name='gather_nd_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+
+            def cond_flip(heatmap_ind):
+                return tf.cond(heatmap_ind[1] < tf.shape(features)[0], lambda : heatmap_ind[0], lambda : tf.transpose(tf.image.flip_left_right(tf.transpose(heatmap_ind[0], [1, 2, 0], name='pred_nchw2nhwc')), [2, 0, 1], name='pred_nhwc2nchw'))
+            # all the heatmap of the fliped image should also be fliped back
+            pred_outputs = [tf.map_fn(cond_flip, [pred_outputs[ind], tf.range(tf.shape(double_features)[0])], dtype=tf.float32, parallel_iterations=10, back_prop=True, swap_memory=False, infer_shape=True, name='map_fn_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+            pred_outputs = [tf.split(_, 2) for _ in pred_outputs]
+            pred_outputs_1 = [_[0] for _ in pred_outputs]
+            pred_outputs_2 = [_[1] for _ in pred_outputs]
+            pred_x_first_stage1, pred_y_first_stage1 = get_keypoint(image, pred_outputs_1[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+            pred_x_first_stage2, pred_y_first_stage2 = get_keypoint(image, pred_outputs_2[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+
+            dist = tf.pow(tf.pow(pred_x_first_stage1 - pred_x_first_stage2, 2.) + tf.pow(pred_y_first_stage1 - pred_y_first_stage2, 2.), .5)
+
+            pred_x = tf.where(dist < 1e-3, pred_x_first_stage1, pred_x_first_stage1 + (pred_x_first_stage2 - pred_x_first_stage1) * 0.25 / dist)
+            pred_y = tf.where(dist < 1e-3, pred_y_first_stage1, pred_y_first_stage1 + (pred_y_first_stage2 - pred_y_first_stage1) * 0.25 / dist)
+    # for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):#TRAINABLE_VARIABLES):
+    #   print(var.op.name)
+
+    predictions = {'pred_x': pred_x + offsets[0], 'pred_y': pred_y + offsets[1], 'file_name': file_name}
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(

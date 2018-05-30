@@ -62,20 +62,20 @@ tf.app.flags.DEFINE_integer(
     'save_summary_steps', 100,
     'The frequency with which summaries are saved, in seconds.')
 tf.app.flags.DEFINE_integer(
-    'save_checkpoints_secs', 3600,
-    'The frequency with which the model is saved, in seconds.')
+    'save_checkpoints_steps', 8000,
+    'The frequency with which the model is saved, in steps.')
 # model related configuration
 tf.app.flags.DEFINE_string(
-    'backbone', 'detxt', # 'detxt' or 'sext'
+    'backbone', 'sext', # 'detxt' or 'sext'
     'The backbone network to use for feature extraction.')
 tf.app.flags.DEFINE_integer(
-    'net_depth', 50,
+    'net_depth', 101,
     'The depth of the backbone network for the model to use.')
 tf.app.flags.DEFINE_integer(
-    'train_image_size', 512,
+    'train_image_size', 384,
     'The size of the input image for the model to use.')
 tf.app.flags.DEFINE_integer(
-    'heatmap_size', 128,
+    'heatmap_size', 96,
     'The size of the output heatmap of the model.')
 tf.app.flags.DEFINE_float(
     'heatmap_sigma', 1.,
@@ -84,7 +84,7 @@ tf.app.flags.DEFINE_float(
     'bbox_border', 25.,
     'The nearest distance of the crop border to al keypoints.')
 tf.app.flags.DEFINE_integer(
-    'batch_size', 5,
+    'batch_size', 4,
     'Batch size for training and evaluation.')
 tf.app.flags.DEFINE_boolean(
     'use_ohkm', True,
@@ -105,9 +105,9 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     'momentum', 0.9,
     'The momentum for the MomentumOptimizer and RMSPropOptimizer.')
-tf.app.flags.DEFINE_float('learning_rate', 5e-5, 'Initial learning rate.')#1e-3
+tf.app.flags.DEFINE_float('learning_rate', 7e-5, 'Initial learning rate.')#1e-3
 tf.app.flags.DEFINE_float(
-    'end_learning_rate', 0.000001,
+    'end_learning_rate', 0.0000001,
     'The minimal end learning rate used by a polynomial decay learning rate.')
 tf.app.flags.DEFINE_float(
     'warmup_learning_rate', 0.00001,
@@ -142,12 +142,12 @@ tf.app.flags.DEFINE_boolean(
 tf.app.flags.DEFINE_boolean(
     'run_on_cloud', True,
     'Wether we will train on cloud.')
+tf.app.flags.DEFINE_boolean(
+    'multi_gpu', True,
+    'Wether we will use multi-GPUs to train.')
 tf.app.flags.DEFINE_string(
     'cloud_checkpoint_path', 'seresnext{}',
     'The path to a checkpoint from which to fine-tune.')
-tf.app.flags.DEFINE_boolean(
-    'seq_train', False,
-    'Wether we will train a sequence model.')
 tf.app.flags.DEFINE_string(
     'model_to_train', 'blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
     'The sub-model to train (comma-separated list).')
@@ -163,13 +163,16 @@ def validate_batch_size_for_multi_gpu(batch_size):
     directly. Multi-GPU support is currently experimental, however,
     so doing the work here until that feature is in place.
     """
+    if not FLAGS.multi_gpu:
+        return 0
+
     from tensorflow.python.client import device_lib
 
     local_device_protos = device_lib.list_local_devices()
     num_gpus = sum([1 for d in local_device_protos if d.device_type == 'GPU'])
     if not num_gpus:
         raise ValueError('Multi-GPU mode was specified, but no GPUs '
-                        'were found. To use CPU, run without --multi_gpu.')
+                        'were found. To use CPU, run without --multi_gpu=False.')
 
     remainder = batch_size % num_gpus
     if remainder:
@@ -180,7 +183,7 @@ def validate_batch_size_for_multi_gpu(batch_size):
         raise ValueError(err)
     return num_gpus
 
-def input_pipeline(is_training=True, model_scope=FLAGS.model_scope, num_epochs=FLAGS.epochs_per_eval):
+def input_pipeline(is_training=True, model_scope=FLAGS.model_scope, num_epochs=None):
     if 'all' in model_scope:
         lnorm_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(config.global_norm_key, dtype=tf.int64),
                                                                 tf.constant(config.global_norm_lvalues, dtype=tf.int64)), 0)
@@ -305,8 +308,6 @@ def keypoint_model_fn(features, labels, mode, params):
 
     with tf.variable_scope(params['model_scope'], default_name=None, values=[features], reuse=tf.AUTO_REUSE):
         pred_outputs = backbone_(features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'], net_depth=params['net_depth'])
-
-    #print(pred_outputs)
 
     if params['data_format'] == 'channels_last':
         pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
@@ -455,7 +456,7 @@ def sub_loop(model_fn, model_scope, model_dir, run_config, train_epochs, epochs_
     _replicate_model_fn = tf_replicate_model_fn.replicate_model_fn(model_fn, loss_reduction=tf.losses.Reduction.MEAN)
 
     fashionAI = tf.estimator.Estimator(
-        model_fn=_replicate_model_fn, model_dir=model_dir, config=run_config,
+        model_fn=_replicate_model_fn, model_dir=model_dir, config=run_config.replace(save_checkpoints_steps=2*steps_per_epoch),
         params={
             'checkpoint_path': checkpoint_path,
             'model_dir': model_dir,
@@ -510,8 +511,8 @@ def main(_):
 
     # Set up a RunConfig to only save checkpoints once per training cycle.
     run_config = tf.estimator.RunConfig().replace(
-                                        save_checkpoints_secs=FLAGS.save_checkpoints_secs).replace(
-                                        save_checkpoints_steps=None).replace(
+                                        save_checkpoints_secs=None).replace(
+                                        save_checkpoints_steps=FLAGS.save_checkpoints_steps).replace(
                                         save_summary_steps=FLAGS.save_summary_steps).replace(
                                         keep_checkpoint_max=5).replace(
                                         tf_random_seed=FLAGS.tf_random_seed).replace(
@@ -524,10 +525,10 @@ def main(_):
     detail_params = {
         'blouse': {
             'model_dir' : os.path.join(full_model_dir, 'blouse'),
-            'train_epochs': 40,
-            'epochs_per_eval': 16,
+            'train_epochs': 25,
+            'epochs_per_eval': 5,
             'lr_decay_factors': '1, 0.5, 0.1',
-            'decay_boundaries': '10, 20',
+            'decay_boundaries': '15, 20',
             'model_scope': 'blouse',
             'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path.format(FLAGS.net_depth)) if FLAGS.run_on_cloud else FLAGS.checkpoint_path.format(FLAGS.net_depth),
             'checkpoint_model_scope': '',
@@ -536,10 +537,10 @@ def main(_):
         },
         'dress': {
             'model_dir' : os.path.join(full_model_dir, 'dress'),
-            'train_epochs': 40,
-            'epochs_per_eval': 16,
+            'train_epochs': 25,
+            'epochs_per_eval': 5,
             'lr_decay_factors': '1, 0.5, 0.1',
-            'decay_boundaries': '10, 20',
+            'decay_boundaries': '15, 20',
             'model_scope': 'dress',
             'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path.format(FLAGS.net_depth)) if FLAGS.run_on_cloud else FLAGS.checkpoint_path.format(FLAGS.net_depth),
             'checkpoint_model_scope': '',
@@ -548,10 +549,10 @@ def main(_):
         },
         'outwear': {
             'model_dir' : os.path.join(full_model_dir, 'outwear'),
-            'train_epochs': 40,
-            'epochs_per_eval': 16,
+            'train_epochs': 25,
+            'epochs_per_eval': 5,
             'lr_decay_factors': '1, 0.5, 0.1',
-            'decay_boundaries': '10, 20',
+            'decay_boundaries': '15, 20',
             'model_scope': 'outwear',
             'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path.format(FLAGS.net_depth)) if FLAGS.run_on_cloud else FLAGS.checkpoint_path.format(FLAGS.net_depth),
             'checkpoint_model_scope': '',
@@ -560,10 +561,10 @@ def main(_):
         },
         'skirt': {
             'model_dir' : os.path.join(full_model_dir, 'skirt'),
-            'train_epochs': 40,
-            'epochs_per_eval': 16,
+            'train_epochs': 25,
+            'epochs_per_eval': 5,
             'lr_decay_factors': '1, 0.5, 0.1',
-            'decay_boundaries': '10, 20',
+            'decay_boundaries': '15, 20',
             'model_scope': 'skirt',
             'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path.format(FLAGS.net_depth)) if FLAGS.run_on_cloud else FLAGS.checkpoint_path.format(FLAGS.net_depth),
             'checkpoint_model_scope': '',
@@ -572,10 +573,10 @@ def main(_):
         },
         'trousers': {
             'model_dir' : os.path.join(full_model_dir, 'trousers'),
-            'train_epochs': 40,
-            'epochs_per_eval': 16,
+            'train_epochs': 25,
+            'epochs_per_eval': 5,
             'lr_decay_factors': '1, 0.5, 0.1',
-            'decay_boundaries': '10, 20',
+            'decay_boundaries': '15, 20',
             'model_scope': 'trousers',
             'checkpoint_path': os.path.join(FLAGS.data_dir, FLAGS.cloud_checkpoint_path.format(FLAGS.net_depth)) if FLAGS.run_on_cloud else FLAGS.checkpoint_path.format(FLAGS.net_depth),
             'checkpoint_model_scope': '',

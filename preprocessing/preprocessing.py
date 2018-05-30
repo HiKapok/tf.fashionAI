@@ -766,6 +766,7 @@ def preprocess_for_train(image,
                          data_format,
                          category,
                          bbox_border, heatmap_sigma, heatmap_size,
+                         return_keypoints=False,
                          resize_side_min=_RESIZE_SIDE_MIN,
                          resize_side_max=_RESIZE_SIDE_MAX,
                          fast_mode=False,
@@ -894,7 +895,10 @@ def preprocess_for_train(image,
     if data_format == 'NCHW':
       distorted_image = tf.transpose(distorted_image, perm=(2, 0, 1))
 
-    return distorted_image, targets, new_key_v, isvalid, norm_value
+    if not return_keypoints:
+      return distorted_image, targets, new_key_v, isvalid, norm_value
+    else:
+      return distorted_image, targets, new_key_x, new_key_y, new_key_v, isvalid, norm_value
 
 
 def preprocess_for_train_v0(image,
@@ -906,6 +910,7 @@ def preprocess_for_train_v0(image,
                            data_format,
                            category,
                            bbox_border, heatmap_sigma, heatmap_size,
+                           return_keypoints=False,
                            resize_side_min=_RESIZE_SIDE_MIN,
                            resize_side_max=_RESIZE_SIDE_MAX,
                            fast_mode=True,
@@ -1208,6 +1213,7 @@ def preprocess_image(image, classid, shape, output_height, output_width,
                     data_format='NCHW',
                     category='*',
                     bbox_border=25., heatmap_sigma=1., heatmap_size=64,
+                    return_keypoints=False,
                     resize_side_min=_RESIZE_SIDE_MIN,
                     resize_side_max=_RESIZE_SIDE_MAX):
   """Preprocesses the given image.
@@ -1231,7 +1237,7 @@ def preprocess_image(image, classid, shape, output_height, output_width,
   """
   if is_training:
     return preprocess_for_train(image, classid, shape, output_height, output_width, key_x, key_y, key_v, norm_table, data_format,
-                              category, bbox_border, heatmap_sigma, heatmap_size, resize_side_min, resize_side_max)
+                              category, bbox_border, heatmap_sigma, heatmap_size, return_keypoints, resize_side_min, resize_side_max)
   else:
     return preprocess_for_eval(image, classid, shape, output_height, output_width, key_x, key_y, key_v, norm_table, data_format,
                               category, bbox_border, heatmap_sigma, heatmap_size, min(output_height, output_width))

@@ -89,8 +89,8 @@ def normalized_error(targets, predictions, norm_value, visible, isvalid,
     dist = tf.boolean_mask(dist, tf.logical_and(visible>0, isvalid>0))
     #dist = dist * tf.cast(tf.logical_and(visible>0, isvalid>0), tf.float32)
 
-    update_total_op = state_ops.assign(total, math_ops.reduce_sum(dist))#assign_add
-    update_count_op = state_ops.assign(count, tf.cast(tf.shape(dist)[0], tf.float32))#assign_add
+    update_total_op = state_ops.assign(total, math_ops.reduce_sum(dist))#assign_add #assign
+    update_count_op = state_ops.assign(count, tf.cast(tf.shape(dist)[0], tf.float32))#assign_add #assign
 
     mean_t = _safe_div(total, count, 'value')
     update_op = _safe_div(update_total_op, update_count_op, 'update_op')

@@ -32,7 +32,7 @@ subs_dir = '../Submit/ensemble'
 # 'sub_2_hg_4_256_64-half_epoch.csv',
 # 'sub_2_hg_8_256_64_v1-half_epoch.csv']#['cpn_2_320_160_1e-3.csv', 'sub_2_hg_4_256_64.csv', 'sub_2_cpn_320_100_1e-3.csv', 'sub_2_hg_8_256_64.csv']
 
-ensemble_subs = ['sext_cpn_flip.csv', 'detxt_cpn_flip.csv']
+ensemble_subs = ['large_seresnext_cpn_sub.csv', 'large_detnext_cpn_sub.csv']
 
 
 def parse_comma_list(args):

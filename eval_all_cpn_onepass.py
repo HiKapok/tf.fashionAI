@@ -112,9 +112,9 @@ all_models = {
   'seresnet50_cpn': {'backbone': seresnet_cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_se_cpn'},
   'seresnext50_cpn': {'backbone': seresnet_cpn.xt_cascaded_pyramid_net, 'logs_sub_dir': 'logs_sext_cpn'},
   'detnext50_cpn': {'backbone': detxt_cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_detxt_cpn'},
-  'large_seresnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : seresnet_cpn.xt_cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=50),
+  'large_seresnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : seresnet_cpn.xt_cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=101),
                         'logs_sub_dir': 'logs_large_sext_cpn'},
-  'large_detnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : detxt_cpn.cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=50),
+  'large_detnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : detxt_cpn.cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=101),
                         'logs_sub_dir': 'logs_large_detxt_cpn'},
   'head_seresnext50_cpn': {'backbone': seresnet_cpn.head_xt_cascaded_pyramid_net, 'logs_sub_dir': 'logs_head_sext_cpn'},
 }
@@ -164,7 +164,7 @@ if config.PRED_DEBUG:
         imsave(os.path.join(config.EVAL_DEBUG_DIR, file_name), img.astype(np.uint8))
       return save_image_with_heatmap.counter
 
-def get_keypoint(image, predictions, heatmap_size, height, width, category, clip_at_zero=True, data_format='channels_last', name=None):
+def get_keypoint(image, predictions, heatmap_size, height, width, category, clip_at_zero=False, data_format='channels_last', name=None):
     # expand_border = 10
     # pad_pred = tf.pad(predictions, tf.constant([[0, 0], [0, 0], [expand_border, expand_border], [expand_border, expand_border]]),
     #               mode='CONSTANT', name='pred_padding', constant_values=0)
@@ -242,7 +242,7 @@ def keypoint_model_fn(features, labels, mode, params):
         if params['data_format'] == 'channels_last':
             pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
 
-        pred_x_first_stage, pred_y_first_stage = get_keypoint(image, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+        pred_x_first_stage, pred_y_first_stage = get_keypoint(image, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
     else:
         # test augumentation on the fly
         if params['data_format'] == 'channels_last':
@@ -270,8 +270,8 @@ def keypoint_model_fn(features, labels, mode, params):
         pred_outputs = [tf.split(_, 2) for _ in pred_outputs]
         pred_outputs_1 = [_[0] for _ in pred_outputs]
         pred_outputs_2 = [_[1] for _ in pred_outputs]
-        pred_x_first_stage1, pred_y_first_stage1 = get_keypoint(image, pred_outputs_1[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
-        pred_x_first_stage2, pred_y_first_stage2 = get_keypoint(image, pred_outputs_2[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+        pred_x_first_stage1, pred_y_first_stage1 = get_keypoint(image, pred_outputs_1[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
+        pred_x_first_stage2, pred_y_first_stage2 = get_keypoint(image, pred_outputs_2[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
 
         dist = tf.pow(tf.pow(pred_x_first_stage1 - pred_x_first_stage2, 2.) + tf.pow(pred_y_first_stage1 - pred_y_first_stage2, 2.), .5)
 
@@ -318,7 +318,7 @@ def keypoint_model_fn(features, labels, mode, params):
             if params['data_format'] == 'channels_last':
                 pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
 
-            pred_x, pred_y = get_keypoint(image, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+            pred_x, pred_y = get_keypoint(image, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
     else:
         # test augumentation on the fly
         with tf.name_scope("refine_prediction"):
@@ -347,8 +347,9 @@ def keypoint_model_fn(features, labels, mode, params):
             pred_outputs = [tf.split(_, 2) for _ in pred_outputs]
             pred_outputs_1 = [_[0] for _ in pred_outputs]
             pred_outputs_2 = [_[1] for _ in pred_outputs]
-            pred_x_first_stage1, pred_y_first_stage1 = get_keypoint(image, pred_outputs_1[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
-            pred_x_first_stage2, pred_y_first_stage2 = get_keypoint(image, pred_outputs_2[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+            #pred_outputs_1[-1] = tf.Print(pred_outputs_1[-1], [pred_outputs_1[-1]], summarize=10000)
+            pred_x_first_stage1, pred_y_first_stage1 = get_keypoint(image, pred_outputs_1[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
+            pred_x_first_stage2, pred_y_first_stage2 = get_keypoint(image, pred_outputs_2[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
 
             dist = tf.pow(tf.pow(pred_x_first_stage1 - pred_x_first_stage2, 2.) + tf.pow(pred_y_first_stage1 - pred_y_first_stage2, 2.), .5)
 
@@ -435,17 +436,17 @@ def main(_):
             #Images/blouse/ab669925e96490ec698af976586f0b2f.jpg
             df.loc[cur_record] = [filename, m] + temp_list
             cur_record = cur_record + 1
-        df.to_csv('./{}.csv'.format(m), encoding='utf-8', index=False)
+        df.to_csv('./{}_{}.csv'.format(FLAGS.backbone.strip(), m), encoding='utf-8', index=False)
 
     # merge dataframe
-    df_list = [pd.read_csv('./{}.csv'.format(model_to_eval[0]), encoding='utf-8')]
+    df_list = [pd.read_csv('./{}_{}.csv'.format(FLAGS.backbone.strip(), model_to_eval[0]), encoding='utf-8')]
     for m in model_to_eval[1:]:
         if m == '': continue
-        df_list.append(pd.read_csv('./{}.csv'.format(m), encoding='utf-8'))
-    pd.concat(df_list, ignore_index=True).to_csv('./sub.csv', encoding='utf-8', index=False)
+        df_list.append(pd.read_csv('./{}_{}.csv'.format(FLAGS.backbone.strip(), m), encoding='utf-8'))
+    pd.concat(df_list, ignore_index=True).to_csv('./{}_sub.csv'.format(FLAGS.backbone.strip()), encoding='utf-8', index=False)
 
     if FLAGS.run_on_cloud:
-        tf.gfile.Copy('./sub.csv', os.path.join(full_model_dir, 'sub.csv'), overwrite=True)
+        tf.gfile.Copy('./{}_sub.csv'.format(FLAGS.backbone.strip()), os.path.join(full_model_dir, '{}_sub.csv'.format(FLAGS.backbone.strip())), overwrite=True)
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)

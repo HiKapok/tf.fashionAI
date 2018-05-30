@@ -28,7 +28,7 @@ slim = tf.contrib.slim
 # blouse_0000.tfrecord
 # {}_????_val.tfrecord
 #category = *
-def slim_get_split(dataset_dir, image_preprocessing_fn, batch_size, num_readers, num_preprocessing_threads, num_epochs=None, is_training=True, category='blouse', file_pattern='{}_????', reader=None):
+def slim_get_split(dataset_dir, image_preprocessing_fn, batch_size, num_readers, num_preprocessing_threads, num_epochs=None, is_training=True, category='blouse', file_pattern='{}_????', reader=None, return_keypoints=False):
     # Allowing None in the signature so that dataset_factory can use the default.
     if reader is None:
         reader = tf.TFRecordReader
@@ -97,10 +97,15 @@ def slim_get_split(dataset_dir, image_preprocessing_fn, batch_size, num_readers,
     key_x, key_y, key_v, key_id, key_gid = tf.gather(key_x, gather_ind), tf.gather(key_y, gather_ind), tf.gather(key_v, gather_ind), tf.gather(key_id, gather_ind), tf.gather(key_gid, gather_ind)
 
     shape = tf.stack([height, width, channels], axis=0)
-    image, targets, new_key_v, isvalid, norm_value = image_preprocessing_fn(org_image, classid, shape, key_x, key_y, key_v)
 
-    batch_input = tf.train.batch([image, shape,
-                                classid, targets, new_key_v, isvalid, norm_value],
+    if not return_keypoints:
+        image, targets, new_key_v, isvalid, norm_value = image_preprocessing_fn(org_image, classid, shape, key_x, key_y, key_v)
+        batch_list = [image, shape, classid, targets, new_key_v, isvalid, norm_value]
+    else:
+        image, targets, new_key_x, new_key_y, new_key_v, isvalid, norm_value = image_preprocessing_fn(org_image, classid, shape, key_x, key_y, key_v)
+        batch_list = [image, shape, classid, targets, new_key_x, new_key_y, new_key_v, isvalid, norm_value]
+
+    batch_input = tf.train.batch(batch_list,
                                 #classid, key_x, key_y, key_v, key_id, key_gid],
                                 dynamic_pad=False,#(not is_training),
                                 batch_size = batch_size,

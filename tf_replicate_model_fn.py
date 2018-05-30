@@ -780,7 +780,7 @@ def _predict_spec(tower_specs, aggregation_device):
 def _concat_tensor_dicts(*tensor_dicts):
   return {
       name: array_ops.concat(tensors, axis=0, name=name)
-      for name, tensors in six.iteritems(_dict_concat(*tensor_dicts))tf_replicate_model_fn.py
+      for name, tensors in six.iteritems(_dict_concat(*tensor_dicts))
   }
 
 

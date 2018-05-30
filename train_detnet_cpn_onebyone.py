@@ -559,8 +559,8 @@ def main(_):
         detail_params = {
             'blouse': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'blouse'),
-                'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'train_epochs': 28,
+                'epochs_per_eval': 7,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'blouse',
@@ -571,8 +571,8 @@ def main(_):
             },
             'dress': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'dress'),
-                'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'train_epochs': 28,
+                'epochs_per_eval': 7,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'dress',
@@ -583,8 +583,8 @@ def main(_):
             },
             'outwear': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'outwear'),
-                'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'train_epochs': 28,
+                'epochs_per_eval': 7,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'outwear',
@@ -595,8 +595,8 @@ def main(_):
             },
             'skirt': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'skirt'),
-                'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'train_epochs': 28,
+                'epochs_per_eval': 7,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'skirt',
@@ -607,8 +607,8 @@ def main(_):
             },
             'trousers': {
                 'model_dir' : os.path.join(FLAGS.model_dir, 'trousers'),
-                'train_epochs': 40,
-                'epochs_per_eval': 16,
+                'train_epochs': 28,
+                'epochs_per_eval': 7,
                 'lr_decay_factors': '1, 0.5, 0.1',
                 'decay_boundaries': '10, 20',
                 'model_scope': 'trousers',
