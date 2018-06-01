@@ -23,7 +23,12 @@ import pandas as pd
 #from scipy.misc import imread, imsave, imshow, imresize
 import tensorflow as tf
 
-from net import detxt_cpn as cpn
+from net import detnet_cpn
+from net import detxt_cpn
+from net import seresnet_cpn
+from net import cpn
+from net import simple_xt
+
 from utility import train_helper
 
 from preprocessing import preprocessing
@@ -44,13 +49,16 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '../Datasets/tfrecords_test',#tfrecords_test tfrecords_test_stage1_b
+    'data_dir', '../Datasets/tfrecords_test_stage2',#tfrecords_test tfrecords_test_stage1_b tfrecords_test_stage2
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
 tf.app.flags.DEFINE_string(
-    'model_dir', './logs_detxt_cpn/',
+    'model_dir', '.',
     'The parent directory where the model will be stored.')
+tf.app.flags.DEFINE_string(
+    'backbone', 'detnet50_cpn',
+    'The backbone network to use for feature extraction.')
 tf.app.flags.DEFINE_integer(
     'log_every_n_steps', 10,
     'The frequency with which logs are print.')
@@ -82,18 +90,15 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_string(
     'checkpoint_path', None,
     'The path to a checkpoint from which to fine-tune.')
-tf.app.flags.DEFINE_string(
-    'coarse_pred_path', None,
-    'The path to a pred csv file from which to crop the input image for finer prediction.')
 tf.app.flags.DEFINE_boolean(
-    'flip_on_test', False,
+    'flip_on_test', True,
     'Wether we will average predictions of left-right fliped image.')
 tf.app.flags.DEFINE_string(
     #'blouse', 'dress', 'outwear', 'skirt', 'trousers', 'all'
     'model_scope', 'blouse',
     'Model scope name used to replace the name_scope in checkpoint.')
 tf.app.flags.DEFINE_boolean(
-    'run_on_cloud', True,
+    'run_on_cloud', False,
     'Wether we will train on cloud.')
 tf.app.flags.DEFINE_string(
     'model_to_eval', 'blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
@@ -102,54 +107,25 @@ tf.app.flags.DEFINE_string(
 #--model_scope=blouse --checkpoint_path=./logs/blouse
 FLAGS = tf.app.flags.FLAGS
 
-def preprocessing_fn(org_image, file_name, shape):
-  pd_df = None
-  if FLAGS.coarse_pred_path is not None:
-    if tf.gfile.Exists(FLAGS.coarse_pred_path):
-      tf.logging.info('Finetuning Prediction From {}.'.format(FLAGS.coarse_pred_path))
-      tf.gfile.Copy(FLAGS.coarse_pred_path, './__coarse_pred.csv', overwrite=True)
-      pd_df = pd.read_csv('./__coarse_pred.csv', encoding='utf-8')
-
-      all_filenames = []
-      all_xmin = []
-      all_ymin = []
-      all_xmax = []
-      all_ymax = []
-
-      all_values = pd_df.values.tolist()
-      for records in all_values:
-        all_filenames.append(records[0].encode('utf8'))
-        xmin = 2000
-        ymin = 2000
-        xmax = -1
-        ymax = -1
-        for kp in records[2:]:
-          keypoint_info = kp.strip().split('_')
-          if int(keypoint_info[2]) == -1:
-            continue
-          xmin = min(xmin, int(keypoint_info[0]))
-          ymin = min(ymin, int(keypoint_info[1]))
-          xmax = max(xmax, int(keypoint_info[0]))
-          ymax = max(ymax, int(keypoint_info[1]))
-        all_xmin.append(xmin)
-        all_ymin.append(ymin)
-        all_xmax.append(xmax)
-        all_ymax.append(ymax)
-      #print(all_filenames, all_xmin, all_ymin, all_xmax, all_ymax)
-      xmin_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(all_filenames, dtype=tf.string), tf.constant(all_xmin, dtype=tf.int64)), -1)
-      ymin_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(all_filenames, dtype=tf.string), tf.constant(all_ymin, dtype=tf.int64)), -1)
-      xmax_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(all_filenames, dtype=tf.string), tf.constant(all_xmax, dtype=tf.int64)), -1)
-      ymax_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(all_filenames, dtype=tf.string), tf.constant(all_ymax, dtype=tf.int64)), -1)
-      pd_df = [xmin_table, ymin_table, xmax_table, ymax_table]
-  #pred_item['file_name'].encode('utf8')
-
-  #lnorm_table = tf.contrib.lookup.HashTable(tf.contrib.lookup.KeyValueTensorInitializer(tf.constant(config.global_norm_key, dtype=tf.int64), tf.constant(config.global_norm_lvalues, dtype=tf.int64)), 0)
-  return preprocessing.preprocess_for_test(org_image, file_name, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size, pred_df=pd_df)
+all_models = {
+  'resnet50_cpn': {'backbone': cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_cpn'},
+  'detnet50_cpn': {'backbone': detnet_cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_detnet_cpn'},
+  'seresnet50_cpn': {'backbone': seresnet_cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_se_cpn'},
+  'seresnext50_cpn': {'backbone': seresnet_cpn.xt_cascaded_pyramid_net, 'logs_sub_dir': 'logs_sext_cpn'},
+  'detnext50_cpn': {'backbone': detxt_cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_detxt_cpn'},
+  'large_seresnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : seresnet_cpn.xt_cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=101),
+                        'logs_sub_dir': 'logs_large_sext_cpn'},
+  'large_detnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : detxt_cpn.cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=101),
+                        'logs_sub_dir': 'logs_large_detxt_cpn'},
+  'simple_net': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : simple_xt.simple_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=101),
+                        'logs_sub_dir': 'logs_simple_net'},
+  'head_seresnext50_cpn': {'backbone': seresnet_cpn.head_xt_cascaded_pyramid_net, 'logs_sub_dir': 'logs_head_sext_cpn'},
+}
 
 def input_pipeline(model_scope=FLAGS.model_scope):
-    # preprocessing_fn = lambda org_image, shape: preprocessing.preprocess_for_test(org_image, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
+    preprocessing_fn = lambda org_image, file_name, shape: preprocessing.preprocess_for_test_raw_output(org_image, file_name, shape, FLAGS.train_image_size, FLAGS.train_image_size, data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), bbox_border=FLAGS.bbox_border, heatmap_sigma=FLAGS.heatmap_sigma, heatmap_size=FLAGS.heatmap_size)
 
-    images, shape, file_name, classid, offsets = dataset.slim_test_get_split(FLAGS.data_dir, preprocessing_fn, FLAGS.num_readers, FLAGS.num_preprocessing_threads, file_pattern=FLAGS.dataset_name, category=(model_scope if 'all' not in model_scope else '*'), reader=None)
+    images, shape, file_name, classid, offsets = dataset.slim_test_get_split(FLAGS.data_dir, None, FLAGS.num_readers, FLAGS.num_preprocessing_threads, file_pattern=FLAGS.dataset_name, category=(model_scope if 'all' not in model_scope else '*'), reader=None, dynamic_pad=True)
 
     return {'images': images, 'shape': shape, 'classid': classid, 'file_name': file_name, 'pred_offsets': offsets}
 
@@ -191,25 +167,7 @@ if config.PRED_DEBUG:
         imsave(os.path.join(config.EVAL_DEBUG_DIR, file_name), img.astype(np.uint8))
       return save_image_with_heatmap.counter
 
-def gaussian_blur(inputs, inputs_filters, sigma, data_format, name=None):
-    with tf.name_scope(name, "gaussian_blur", [inputs]):
-        data_format_ = 'NHWC' if data_format=='channels_last' else 'NCHW'
-        if data_format_ == 'NHWC':
-            inputs = tf.transpose(inputs, [0, 2, 3, 1])
-        ksize = int(6 * sigma + 1.)
-        x = tf.expand_dims(tf.range(ksize, delta=1, dtype=tf.float32), axis=1)
-        y = tf.transpose(x, [1, 0])
-        kernel_matrix = tf.exp(- ((x - ksize/2.) ** 2 + (y - ksize/2.) ** 2) / (2 * sigma ** 2))
-        #print(kernel_matrix)
-        kernel_filter = tf.reshape(kernel_matrix, [ksize, ksize, 1, 1])
-        kernel_filter = tf.tile(kernel_filter, [1, 1, inputs_filters, 1])
-        #kernel_filter = tf.transpose(kernel_filter, [1, 0, 2, 3])
-        outputs = tf.nn.depthwise_conv2d(inputs, kernel_filter, strides=[1, 1, 1, 1], padding='SAME', data_format=data_format_, name='blur')
-        if data_format_ == 'NHWC':
-            outputs = tf.transpose(outputs, [0, 3, 1, 2])
-        return outputs
-
-def get_keypoint(image, predictions, heatmap_size, height, width, category, clip_at_zero=True, data_format='channels_last', name=None):
+def get_keypoint(image, predictions, heatmap_size, height, width, category, clip_at_zero=False, data_format='channels_last', name=None):
     # expand_border = 10
     # pad_pred = tf.pad(predictions, tf.constant([[0, 0], [0, 0], [expand_border, expand_border], [expand_border, expand_border]]),
     #               mode='CONSTANT', name='pred_padding', constant_values=0)
@@ -268,91 +226,65 @@ def get_keypoint(image, predictions, heatmap_size, height, width, category, clip
         pred_x, pred_y = pred_x * 1., pred_y * 1.
     return pred_x, pred_y
 
-def get_keypoint_v0(image, predictions, heatmap_size, height, width, category, clip_at_zero=True, data_format='channels_last', name=None):
-    predictions = tf.reshape(predictions, [1, -1, heatmap_size*heatmap_size])
-
-    pred_max = tf.reduce_max(predictions, axis=-1)
-    pred_indices = tf.argmax(predictions, axis=-1)
-    pred_x, pred_y = tf.cast(tf.floormod(pred_indices, heatmap_size), tf.float32), tf.cast(tf.floordiv(pred_indices, heatmap_size), tf.float32)
-
-    width, height = tf.cast(width, tf.float32), tf.cast(height, tf.float32)
-    pred_x, pred_y = pred_x * width / tf.cast(heatmap_size, tf.float32), pred_y * height / tf.cast(heatmap_size, tf.float32)
-
-    if clip_at_zero:
-      pred_x, pred_y =  pred_x * tf.cast(pred_max>0, tf.float32), pred_y * tf.cast(pred_max>0, tf.float32)
-      pred_x = pred_x * tf.cast(pred_max>0, tf.float32) + tf.cast(pred_max<=0, tf.float32) * (width / 2.)
-      pred_y = pred_y * tf.cast(pred_max>0, tf.float32) + tf.cast(pred_max<=0, tf.float32) * (height / 2.)
-
-    if config.PRED_DEBUG:
-      pred_indices_ = tf.squeeze(pred_indices)
-      image_ = tf.squeeze(image) * 255.
-      pred_heatmap = tf.one_hot(pred_indices_, heatmap_size*heatmap_size, on_value=255, off_value=0, axis=-1, dtype=tf.int32)
-
-      pred_heatmap = tf.reshape(pred_heatmap, [-1, heatmap_size, heatmap_size])
-      if data_format == 'channels_first':
-        image_ = tf.transpose(image_, perm=(1, 2, 0))
-      save_image_op = tf.py_func(save_image_with_heatmap,
-                                  [image_, height, width,
-                                  heatmap_size,
-                                  pred_heatmap,
-                                  tf.reshape(predictions, [-1, heatmap_size, heatmap_size]),
-                                  config.left_right_group_map[category][0],
-                                  config.left_right_group_map[category][1],
-                                  config.left_right_group_map[category][2]],
-                                  tf.int64, stateful=True)
-      with tf.control_dependencies([save_image_op]):
-        pred_x, pred_y = pred_x * 1., pred_y * 1.
-    return pred_x, pred_y
+backbone_ = all_models[FLAGS.backbone.strip()]['backbone']
 
 def keypoint_model_fn(features, labels, mode, params):
     #print(features)
     shape = features['shape']
     classid = features['classid']
-    pred_offsets = tf.to_float(features['pred_offsets'])
     file_name = features['file_name']
     features = features['images']
 
     file_name = tf.identity(file_name, name='current_file')
 
+    image = preprocessing.preprocess_for_test_raw_output(features, params['train_image_size'], params['train_image_size'], data_format=('NCHW' if FLAGS.data_format=='channels_first' else 'NHWC'), scope='first_stage')
+
     if not params['flip_on_test']:
-        with tf.variable_scope(params['model_scope'], default_name=None, values=[features], reuse=tf.AUTO_REUSE):
-            pred_outputs = cpn.cascaded_pyramid_net(features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
+        with tf.variable_scope(params['model_scope'], default_name=None, values=[image], reuse=tf.AUTO_REUSE):
+            pred_outputs = backbone_(image, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
         if params['data_format'] == 'channels_last':
             pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+
+        pred_x, pred_y = get_keypoint(image, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
     else:
         # test augumentation on the fly
         if params['data_format'] == 'channels_last':
-            double_features = tf.reshape(tf.stack([features, tf.map_fn(tf.image.flip_left_right, features, back_prop=False)], axis = 1), [-1, params['train_image_size'], params['train_image_size'], 3])
+            double_features = tf.reshape(tf.stack([image, tf.map_fn(tf.image.flip_left_right, image, back_prop=False)], axis = 1), [-1, params['train_image_size'], params['train_image_size'], 3])
         else:
-            double_features = tf.reshape(tf.stack([features, tf.transpose(tf.map_fn(tf.image.flip_left_right, tf.transpose(features, [0, 2, 3, 1], name='nchw2nhwc'), back_prop=False), [0, 3, 1, 2], name='nhwc2nchw')], axis = 1), [-1, 3, params['train_image_size'], params['train_image_size']])
+            double_features = tf.reshape(tf.stack([image, tf.transpose(tf.map_fn(tf.image.flip_left_right, tf.transpose(image, [0, 2, 3, 1], name='nchw2nhwc'), back_prop=False), [0, 3, 1, 2], name='nhwc2nchw')], axis = 1), [-1, 3, params['train_image_size'], params['train_image_size']])
 
         num_joints = config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')]
         with tf.variable_scope(params['model_scope'], default_name=None, values=[double_features], reuse=tf.AUTO_REUSE):
-            pred_outputs = cpn.cascaded_pyramid_net(double_features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
+            pred_outputs = backbone_(double_features, config.class_num_joints[(params['model_scope'] if 'all' not in params['model_scope'] else '*')], params['heatmap_size'], (mode == tf.estimator.ModeKeys.TRAIN), params['data_format'])
 
         if params['data_format'] == 'channels_last':
             pred_outputs = [tf.transpose(pred_outputs[ind], [0, 3, 1, 2], name='outputs_trans_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
-        # [[0, 0, 0, ..], [1, 1, 1, ...], ...]
-        row_indices = tf.tile(tf.reshape(tf.range(tf.shape(double_features)[0]), [-1, 1]), [1, num_joints])
-        # [[0, 1, 2, ...], [1, 0, 2, ...], [0, 1, 2], [1, 0, 2], ...]
-        col_indices = tf.reshape(tf.tile(tf.reshape(tf.stack([tf.range(num_joints), tf.constant(config.left_right_remap[(params['model_scope'] if 'all' not in params['model_scope'] else '*')])], axis=0), [-1]), [tf.shape(features)[0]]), [-1, num_joints])
-        # [[[0, 0], [0, 1], [0, 2], ...], [[1, 1], [1, 0], [1, 2], ...], [[2, 0], [2, 1], [2, 2], ...], ...]
+        row_indices = tf.tile(tf.reshape(tf.stack([tf.range(0, tf.shape(double_features)[0], delta=2), tf.range(1, tf.shape(double_features)[0], delta=2)], axis=0), [-1, 1]), [1, num_joints])
+        col_indices = tf.reshape(tf.tile(tf.reshape(tf.stack([tf.range(num_joints), tf.constant(config.left_right_remap[(params['model_scope'] if 'all' not in params['model_scope'] else '*')])], axis=0), [2, -1]), [1, tf.shape(features)[0]]), [-1, num_joints])
         flip_indices=tf.stack([row_indices, col_indices], axis=-1)
 
         #flip_indices = tf.Print(flip_indices, [flip_indices], summarize=500)
         pred_outputs = [tf.gather_nd(pred_outputs[ind], flip_indices, name='gather_nd_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
 
         def cond_flip(heatmap_ind):
-            return tf.cond(heatmap_ind[1] < 1, lambda : heatmap_ind[0], lambda : tf.transpose(tf.image.flip_left_right(tf.transpose(heatmap_ind[0], [1, 2, 0], name='pred_nchw2nhwc')), [2, 0, 1], name='pred_nhwc2nchw'))
+            return tf.cond(heatmap_ind[1] < tf.shape(features)[0], lambda : heatmap_ind[0], lambda : tf.transpose(tf.image.flip_left_right(tf.transpose(heatmap_ind[0], [1, 2, 0], name='pred_nchw2nhwc')), [2, 0, 1], name='pred_nhwc2nchw'))
         # all the heatmap of the fliped image should also be fliped back
-        pred_outputs = [tf.map_fn(cond_flip, [pred_outputs[ind], tf.tile(tf.reshape(tf.range(2), [-1]), [tf.shape(features)[0]])], dtype=tf.float32, parallel_iterations=10, back_prop=True, swap_memory=False, infer_shape=True, name='map_fn_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
-        # average predictions of left_reight_fliped image
-        segment_indices = tf.reshape(tf.tile(tf.reshape(tf.range(tf.shape(features)[0]), [-1, 1]), [1, 2]), [-1])
-        pred_outputs = [tf.segment_mean(pred_outputs[ind], segment_indices, name='segment_mean_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+        pred_outputs = [tf.map_fn(cond_flip, [pred_outputs[ind], tf.range(tf.shape(double_features)[0])], dtype=tf.float32, parallel_iterations=10, back_prop=True, swap_memory=False, infer_shape=True, name='map_fn_{}'.format(ind)) for ind in list(range(len(pred_outputs)))]
+        pred_outputs = [tf.split(_, 2) for _ in pred_outputs]
+        pred_outputs_1 = [_[0] for _ in pred_outputs]
+        pred_outputs_2 = [_[1] for _ in pred_outputs]
+        pred_x_first_stage1, pred_y_first_stage1 = get_keypoint(image, pred_outputs_1[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
+        pred_x_first_stage2, pred_y_first_stage2 = get_keypoint(image, pred_outputs_2[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=False, data_format=params['data_format'])
 
-    pred_x, pred_y = get_keypoint(features, pred_outputs[-1], params['heatmap_size'], shape[0][0], shape[0][1], (params['model_scope'] if 'all' not in params['model_scope'] else '*'), clip_at_zero=True, data_format=params['data_format'])
+        dist = tf.pow(tf.pow(pred_x_first_stage1 - pred_x_first_stage2, 2.) + tf.pow(pred_y_first_stage1 - pred_y_first_stage2, 2.), .5)
 
-    predictions = {'pred_x': pred_x + pred_offsets[:, 0], 'pred_y': pred_y + pred_offsets[:, 1], 'file_name': file_name}
+        pred_x = tf.where(dist < 1e-3, pred_x_first_stage1, pred_x_first_stage1 + (pred_x_first_stage2 - pred_x_first_stage1) * 0.25 / dist)
+        pred_y = tf.where(dist < 1e-3, pred_y_first_stage1, pred_y_first_stage1 + (pred_y_first_stage2 - pred_y_first_stage1) * 0.25 / dist)
+
+    # for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):#TRAINABLE_VARIABLES):
+    #   print(var.op.name)
+
+    predictions = {'pred_x': pred_x, 'pred_y': pred_y, 'file_name': file_name}
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(
@@ -405,9 +337,11 @@ def main(_):
                                         session_config=sess_config)
 
     model_to_eval = [s.strip() for s in FLAGS.model_to_eval.split(',')]
+
+    full_model_dir = os.path.join(FLAGS.model_dir, all_models[FLAGS.backbone.strip()]['logs_sub_dir'])
     for m in model_to_eval:
         if m == '': continue
-        pred_results = eval_each(keypoint_model_fn, os.path.join(FLAGS.model_dir, m), m, run_config)
+        pred_results = eval_each(keypoint_model_fn, os.path.join(full_model_dir, m), m, run_config)
         #print(pred_results)
         # collect result
         df = pd.DataFrame(columns=['image_id', 'image_category'] + config.all_keys)
@@ -428,17 +362,17 @@ def main(_):
             #Images/blouse/ab669925e96490ec698af976586f0b2f.jpg
             df.loc[cur_record] = [filename, m] + temp_list
             cur_record = cur_record + 1
-        df.to_csv('./{}.csv'.format(m), encoding='utf-8', index=False)
+        df.to_csv('./{}_{}.csv'.format(FLAGS.backbone.strip(), m), encoding='utf-8', index=False)
 
     # merge dataframe
-    df_list = [pd.read_csv('./{}.csv'.format(model_to_eval[0]), encoding='utf-8')]
+    df_list = [pd.read_csv('./{}_{}.csv'.format(FLAGS.backbone.strip(), model_to_eval[0]), encoding='utf-8')]
     for m in model_to_eval[1:]:
         if m == '': continue
-        df_list.append(pd.read_csv('./{}.csv'.format(m), encoding='utf-8'))
-    pd.concat(df_list, ignore_index=True).to_csv('./sub.csv', encoding='utf-8', index=False)
+        df_list.append(pd.read_csv('./{}_{}.csv'.format(FLAGS.backbone.strip(), m), encoding='utf-8'))
+    pd.concat(df_list, ignore_index=True).to_csv('./{}_sub.csv'.format(FLAGS.backbone.strip()), encoding='utf-8', index=False)
 
     if FLAGS.run_on_cloud:
-        tf.gfile.Copy('./sub.csv', os.path.join(FLAGS.model_dir, 'sub.csv'), overwrite=True)
+        tf.gfile.Copy('./{}_sub.csv'.format(FLAGS.backbone.strip()), os.path.join(full_model_dir, '{}_sub.csv'.format(FLAGS.backbone.strip())), overwrite=True)
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)

@@ -20,6 +20,7 @@ PRED_DEBUG = False
 DATA_DIR = '../Datasets'
 RECORDS_DATA_DIR = '../Datasets/tfrecords'
 TEST_RECORDS_DATA_DIR = '../Datasets/tfrecords_test'
+TEST_RECORDS_STAGE2 = '../Datasets/tfrecords_test_stage2'
 
 CATEGORIES = ['blouse', 'dress', 'outwear', 'skirt', 'trousers']
 SPLITS = ['test_0', 'train_1', 'train_2', 'train_3']#'train_0',
@@ -300,30 +301,31 @@ left_right_group_map = {
 # {'trousers': 10251, 'skirt': 11649, 'blouse': 11109, 'dress': 9002, 'outwear': 9586} 51597
 # warm-up {'trousers': 2795, 'skirt': 2292, 'blouse': 2997, 'dress': 2312, 'outwear': 2138} 12534
 # test_a {'trousers': 2631, 'skirt': 2683, 'blouse': 2586, 'dress': 2693, 'outwear': 2508} 13101
+# test_b {'outwear': 10906, 'trousers': 10618, 'dress': 11096, 'skirt': 11154, 'blouse': 10670} 54444
 split_size = {
             '*': {'train': 51597+12534,
                 'val': 0,
-                'test': 13101,
-                'test_a': 9970},
+                'test': 54444,
+                'test_a': 13101},
             'blouse': {'train': 11109+2997,
                 'val': 0,
-                'test': 2586,
-                'test_a': 1974},
+                'test': 10670,
+                'test_a': 2586},
             'dress': {'train': 9002+2312,
                 'val': 0,
-                'test': 2693,
-                'test_a': 2052},
+                'test': 11096,
+                'test_a': 2693},
             'outwear': {'train': 9586+2138,
                 'val': 0,
-                'test': 2508,
-                'test_a': 1947},
+                'test': 10906,
+                'test_a': 2508},
             'skirt': {'train': 11649+2292,
                 'val': 0,
-                'test': 2683,
-                'test_a': 2051},
+                'test': 11154,
+                'test_a': 2683},
             'trousers': {'train': 10251+2795,
                 'val': 0,
-                'test': 2631,
-                'test_a': 1946},
+                'test': 10618,
+                'test_a': 2631},
             }
 

@@ -1,6 +1,6 @@
-# Hourglass and CPN model in TensorFlow for 2018-FashionAI Key Points Detection of Apparel at TianChi
+# Hourglass, DHN and CPN model in TensorFlow for 2018-FashionAI Key Points Detection of Apparel at TianChi
 
-This repository contains codes of the re-implementent of [Stacked Hourglass Networks for Human Pose Estimation](https://arxiv.org/abs/1603.06937) and [Cascaded Pyramid Network for Multi-Person Pose Estimation](https://arxiv.org/abs/1711.07319) in TensorFlow for [FashionAI Global Challenge 2018 - Key Points Detection of Apparel](https://tianchi.aliyun.com/competition/introduction.htm?spm=5176.11409106.5678.1.95b62e48Im9JVH&raceId=231648). The CPN(Cascaded Pyramid Network) here has several different backbones: ResNet50, SE-ResNet50, SE-ResNeXt50, [DetNet](https://arxiv.org/abs/1804.06215) or DetResNeXt50. I have also tried [Averaging Weights Leads to Wider Optima and Better Generalization](https://arxiv.org/abs/1803.05407) to ensemble models on the fly, although limited improvement was achieved.
+This repository contains codes of the re-implementent of [Stacked Hourglass Networks for Human Pose Estimation](https://arxiv.org/abs/1603.06937), [Simple Baselines for Human Pose Estimation and Tracking (Deconvolution Head Network)](https://arxiv.org/abs/1804.06208) and [Cascaded Pyramid Network for Multi-Person Pose Estimation](https://arxiv.org/abs/1711.07319) in TensorFlow for [FashionAI Global Challenge 2018 - Key Points Detection of Apparel](https://tianchi.aliyun.com/competition/introduction.htm?spm=5176.11409106.5678.1.95b62e48Im9JVH&raceId=231648). Both the CPN(Cascaded Pyramid Network) and DHN (Deconvolution Head Network) here has several different backbones: ResNet50, SE-ResNet50, SE-ResNeXt50, [DetNet](https://arxiv.org/abs/1804.06215) or DetResNeXt50. I have also tried [Averaging Weights Leads to Wider Optima and Better Generalization](https://arxiv.org/abs/1803.05407) to ensemble models on the fly, although limited improvement was achieved.
 
 The pre-trained models of backbone networks can be found here:
 
@@ -19,6 +19,7 @@ Almost all the codes was writen by myself and tested under TensorFlow 1.6, Pytho
 About the model:
 
 - DetNet is better, perform almost the same as SEResNeXt, while SEResNet showed little improvement than ResNet
+- DHN has at least the same performance as CPN, but lack of thorough testing due to the limited time
 - Enforce the loss of invisible keypoints to zero gave better performance
 - OHKM is useful
 - It's bad to do gaussian blur on the predicted heatmap, but it's better to do gaussian blur on the target heatmaps for lower-level prediction
@@ -66,9 +67,9 @@ If you find it's useful to your research or competitions, any contribution or st
 	- train_2 -> fashionAI_key_points_test_a_20180227.tar
 	- train_3 -> fashionAI_key_points_test_b_20180418.tgz
 	- test_0  -> round2_fashionAI_key_points_test_a_20180426.tar
-	- test_1  -> round2_fashionAI_key_points_test_b_20180601.tar
+	- test_1  -> round2_fashionAI_key_points_test_b_20180530.zip.zip
 
-- set your local dataset path in [config.py](https://github.com/HiKapok/tf.fashionAI/blob/e90c5b0072338fa638c56ae788f7146d3f36cb1f/config.py#L20)
+- set your local dataset path in [config.py](https://github.com/HiKapok/tf.fashionAI/blob/e90c5b0072338fa638c56ae788f7146d3f36cb1f/config.py#L20), and then run convert_tfrecords.py to generate *.tfrecords
 - create one file foler named 'model' under the root path of your codes, download all the pre-trained weights of the backbone networks and put them into different sub-folders named 'resnet50', 'seresnet50' and 'seresnext50'. Then start training(set RECORDS_DATA_DIR and TEST_RECORDS_DATA_DIR according to your [config.py](https://github.com/HiKapok/tf.fashionAI/blob/e90c5b0072338fa638c56ae788f7146d3f36cb1f/config.py#L20)):
     ```sh
 	python train_detxt_cpn_onebyone.py --run_on_cloud=False --data_dir=RECORDS_DATA_DIR

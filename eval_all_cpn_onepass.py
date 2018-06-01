@@ -17,6 +17,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import time
 import sys
 import numpy as np
 import pandas as pd
@@ -27,6 +28,7 @@ from net import detnet_cpn
 from net import detxt_cpn
 from net import seresnet_cpn
 from net import cpn
+from net import simple_xt
 
 from utility import train_helper
 
@@ -48,7 +50,7 @@ tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1., 'GPU memory fraction to use.')
 # scaffold related configuration
 tf.app.flags.DEFINE_string(
-    'data_dir', '../Datasets/tfrecords_test',#tfrecords_test tfrecords_test_stage1_b
+    'data_dir', '../Datasets/tfrecords_test_stage2',#tfrecords_test tfrecords_test_stage1_b tfrecords_test_stage2
     'The directory where the dataset input data is stored.')
 tf.app.flags.DEFINE_string(
     'dataset_name', '{}_*.tfrecord', 'The pattern of the dataset name to load.')
@@ -97,7 +99,7 @@ tf.app.flags.DEFINE_string(
     'model_scope', 'blouse',
     'Model scope name used to replace the name_scope in checkpoint.')
 tf.app.flags.DEFINE_boolean(
-    'run_on_cloud', True,
+    'run_on_cloud', False,
     'Wether we will train on cloud.')
 tf.app.flags.DEFINE_string(
     'model_to_eval', 'blouse, dress, outwear, skirt, trousers', #'all, blouse, dress, outwear, skirt, trousers', 'skirt, dress, outwear, trousers',
@@ -106,6 +108,7 @@ tf.app.flags.DEFINE_string(
 #--model_scope=blouse --checkpoint_path=./logs/blouse
 FLAGS = tf.app.flags.FLAGS
 
+#print(FLAGS.data_dir)
 all_models = {
   'resnet50_cpn': {'backbone': cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_cpn'},
   'detnet50_cpn': {'backbone': detnet_cpn.cascaded_pyramid_net, 'logs_sub_dir': 'logs_detnet_cpn'},
@@ -116,6 +119,8 @@ all_models = {
                         'logs_sub_dir': 'logs_large_sext_cpn'},
   'large_detnext_cpn': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : detxt_cpn.cascaded_pyramid_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=101),
                         'logs_sub_dir': 'logs_large_detxt_cpn'},
+  'simple_net': {'backbone': lambda inputs, output_channals, heatmap_size, istraining, data_format : simple_xt.simple_net(inputs, output_channals, heatmap_size, istraining, data_format, net_depth=101),
+                        'logs_sub_dir': 'logs_simple_net'},
   'head_seresnext50_cpn': {'backbone': seresnet_cpn.head_xt_cascaded_pyramid_net, 'logs_sub_dir': 'logs_head_sext_cpn'},
 }
 
@@ -443,10 +448,12 @@ def main(_):
     for m in model_to_eval[1:]:
         if m == '': continue
         df_list.append(pd.read_csv('./{}_{}.csv'.format(FLAGS.backbone.strip(), m), encoding='utf-8'))
-    pd.concat(df_list, ignore_index=True).to_csv('./{}_sub.csv'.format(FLAGS.backbone.strip()), encoding='utf-8', index=False)
+
+    time_stamps = int(time.time())
+    pd.concat(df_list, ignore_index=True).to_csv('./{}_sub_{}.csv'.format(FLAGS.backbone.strip(), time_stamps), encoding='utf-8', index=False)
 
     if FLAGS.run_on_cloud:
-        tf.gfile.Copy('./{}_sub.csv'.format(FLAGS.backbone.strip()), os.path.join(full_model_dir, '{}_sub.csv'.format(FLAGS.backbone.strip())), overwrite=True)
+        tf.gfile.Copy('./{}_sub_{}.csv'.format(FLAGS.backbone.strip(), time_stamps), os.path.join(full_model_dir, '{}_sub_{}.csv'.format(FLAGS.backbone.strip(), time_stamps)), overwrite=True)
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)
