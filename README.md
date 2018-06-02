@@ -35,6 +35,8 @@ There are still other ways to further improve the performance but I didn't try t
 - Multi-scale supervision for Stacked Hourglass Models
 - Extra-regressor to refine the location of keypoints
 - Multi-crop or multi-scale ensemble for single image predictions
+- It's maybe better to put all catgories into one model rather than training separate ones (the codes supports both mode)
+- It was also reported that replacing the bilinear-upsample of CPN to deconvolution did much better
    
 If you find it's useful to your research or competitions, any contribution or star to this repo is welcomed.
 
@@ -86,7 +88,7 @@ If you find it's useful to your research or competitions, any contribution or st
 - training more deeper backbone networks will give better results (+0.001).
 - the training of hourglass model is almost the same as above but gave inferior performance
 
-## ##
+## Results
 Some Detection Results (satge one):
 
 - Cascaded Pyramid Network:
